@@ -41,18 +41,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     router.push('/login');
   };
 
-  const navItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    {
-      name: currentRole === 'REGISTRAR' ? 'Manage Register' : 'Registrations',
-      href: '/registrations',
-      icon: FileCheck2,
-    },
-    { name: 'Students', href: '/students', icon: GraduationCap },
-    { name: 'Institutions', href: '/institutions', icon: Building2 },
-    { name: 'Documents', href: '/documents', icon: FileText },
-    { name: 'Audit Logs', href: '/audit-logs', icon: HelpCircle },
-  ];
+  // Dynamic navigation items based on current active user role
+  const getNavItems = () => {
+    const baseItems = [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+      {
+        name: currentRole === 'REGISTRAR' ? 'Manage Register' : 'Registrations Directory',
+        href: '/registrations',
+        icon: FileCheck2,
+      },
+      { name: 'Student Directory', href: '/students', icon: GraduationCap },
+      { name: 'Institutions', href: '/institutions', icon: Building2 },
+      { name: 'Document Locker', href: '/documents', icon: FileText },
+    ];
+
+    // Privileged audit & governance routes for ADMINISTRATOR & UNIVERSAL roles
+    if (currentRole === 'UNIVERSAL' || currentRole === 'ADMINISTRATOR') {
+      baseItems.push({
+        name: 'System Audit Logs',
+        href: '/audit-logs',
+        icon: HelpCircle,
+      });
+    }
+
+    return baseItems;
+  };
+
+  const navItems = getNavItems();
 
   return (
     <aside
@@ -67,11 +82,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="p-2 rounded-lg bg-slate-900 text-white shadow-xs shrink-0">
             <Landmark className="h-4 w-4" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-tight truncate">
               ATA Portal
             </h1>
-            <p className="text-[11px] text-slate-500 font-medium truncate">Academic Management</p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border uppercase ${
+                currentRole === 'UNIVERSAL'
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : currentRole === 'ADMINISTRATOR'
+                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}>
+                {currentRole}
+              </span>
+            </div>
           </div>
         </div>
 

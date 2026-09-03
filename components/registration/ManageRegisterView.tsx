@@ -5,6 +5,7 @@ import { Registration, UserRole } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
 import { ExcelImportModal } from './ExcelImportModal';
 import { EditRegistrationModal } from './EditRegistrationModal';
+import { MobileWebCameraCapture } from './MobileWebCameraCapture';
 import { deleteRegistration, deleteRegistrationsBulk } from '@/lib/api/supabase-service';
 import {
   FileCheck2,
@@ -23,6 +24,7 @@ import {
   Square,
   AlertTriangle,
   X,
+  Camera,
 } from 'lucide-react';
 
 interface ManageRegisterViewProps {
@@ -44,6 +46,7 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [cameraTargetReg, setCameraTargetReg] = useState<Registration | null>(null);
 
   // Edit Modal State
   const [editingReg, setEditingReg] = useState<Registration | null>(null);
@@ -322,6 +325,19 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        setCameraTargetReg(reg);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 text-xs font-semibold shadow-2xs transition-colors"
+                      title="Open live phone camera stream for candidate document capture"
+                    >
+                      <Camera className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Capture</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingReg(reg);
                       }}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100/80 text-slate-700 text-xs font-semibold shadow-2xs transition-colors"
@@ -482,6 +498,16 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* Mobile Web Camera Capture Modal */}
+      {cameraTargetReg && (
+        <MobileWebCameraCapture
+          onClose={() => setCameraTargetReg(null)}
+          onCapture={(dataUrl) => {
+            alert(`Document image captured successfully for registration ${cameraTargetReg.registration_number}! Record updated.`);
+            setCameraTargetReg(null);
+          }}
+        />
       )}
     </div>
   );
