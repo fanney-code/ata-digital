@@ -42,11 +42,32 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
   const [showResubmitBox, setShowResubmitBox] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [capturedDocs, setCapturedDocs] = useState<string[]>([]);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockReason, setUnlockReason] = useState('');
 
   const student = registration.student;
   const institution = registration.institution;
   const department = registration.department;
   const program = registration.program;
+
+  const handleControlledUnlock = async () => {
+    if (!unlockReason.trim()) {
+      alert('Mandatory unlock reason note is required to unlock an approved record.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onUpdateStatus(
+        registration.id,
+        'UNDER_REVIEW',
+        `Controlled Admin Unlock: ${unlockReason.trim()}`
+      );
+      setShowUnlockModal(false);
+      setUnlockReason('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleApprove = async () => {
     setIsSubmitting(true);
@@ -184,14 +205,26 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
                   </button>
                 </>
               )}
+
+              {/* Approved Record Lock & Controlled Admin Unlock Action */}
+              {registration.status === 'APPROVED' && (
+                <button
+                  onClick={() => setShowUnlockModal(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs transition-colors shadow-xs"
+                >
+                  <RefreshCw className="h-4 w-4 text-amber-600" />
+                  Controlled Admin Unlock
+                </button>
+              )}
             </>
           )}
 
-          {/* UNIVERSAL READ ONLY NOTICE */}
-          {currentRole === 'UNIVERSAL' && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 italic">
-              Read-only mode (Workflow modifications restricted)
-            </span>
+          {/* APPROVED READ ONLY LOCK NOTICE */}
+          {registration.status === 'APPROVED' && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs border border-slate-300">
+              <ShieldAlert className="h-4 w-4 text-emerald-600" />
+              <span>Record Locked & Approved</span>
+            </div>
           )}
         </div>
       </div>
@@ -437,6 +470,45 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
             setIsCameraModalOpen(false);
           }}
         />
+      )}
+
+      {/* Controlled Admin Unlock Modal */}
+      {showUnlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-xl p-6 space-y-4">
+            <div className="flex items-center gap-2.5 text-amber-800">
+              <ShieldAlert className="h-6 w-6 text-amber-600" />
+              <h3 className="text-base font-bold">Controlled Admin Record Unlock</h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              You are re-opening an <span className="font-bold text-emerald-600">APPROVED</span> registration record. Please provide a mandatory reason for audit compliance:
+            </p>
+            <textarea
+              rows={3}
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              placeholder="Reason for unlocking (e.g. Correcting legacy program code or institution name)..."
+              className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowUnlockModal(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!unlockReason.trim() || isSubmitting}
+                onClick={handleControlledUnlock}
+                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs disabled:opacity-40"
+              >
+                {isSubmitting ? 'Unlocking...' : 'Confirm Controlled Unlock'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

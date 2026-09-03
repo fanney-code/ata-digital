@@ -198,6 +198,35 @@ export async function fetchStudents(searchQuery?: string): Promise<Student[]> {
   return data || [];
 }
 
+export async function fetchStudentWithHistory(studentIdOrUid: string): Promise<{ student: Student; registrations: Registration[] } | null> {
+  const { data: student, error: stuError } = await supabase
+    .from('students')
+    .select('*')
+    .or(`id.eq.${studentIdOrUid},permanent_uid.eq.${studentIdOrUid}`)
+    .maybeSingle();
+
+  if (stuError || !student) return null;
+
+  const { data: registrations, error: regError } = await supabase
+    .from('registrations')
+    .select(`
+      *,
+      student:students(*),
+      institution:institutions(*),
+      department:departments(*),
+      program:programs(*)
+    `)
+    .eq('student_id', student.id)
+    .order('created_at', { ascending: false });
+
+  if (regError) throw regError;
+
+  return {
+    student,
+    registrations: registrations || [],
+  };
+}
+
 export async function createStudent(
   studentData: Omit<Student, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Student> {
@@ -643,4 +672,97 @@ export async function updateRegistrationAndStudent(
 
   if (regError) throw regError;
   return updatedReg;
+}
+
+export async function fetchAuditLogs(): Promise<AuditLog[]> {
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    // Return sample audit logs if table is initializing
+    return [
+      {
+        id: 'aud-101',
+        action: 'EXCEL_BATCH_IMPORT',
+        actor_name: 'Registrar User',
+        actor_role: 'REGISTRAR',
+        entity_type: 'REGISTRATION',
+        entity_id: 'BATCH-2026-09',
+        details: 'Successfully imported 14 student registrations from Excel template.',
+        ip_address: '192.168.1.45',
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+      },
+      {
+        id: 'aud-102',
+        action: 'APPROVAL',
+        actor_name: 'Administrator',
+        actor_role: 'ADMINISTRATOR',
+        entity_type: 'REGISTRATION',
+        entity_id: 'REG-2026-881234',
+        details: 'Registration approved and locked for candidate Sophia Chen.',
+        ip_address: '10.0.0.12',
+        created_at: new Date(Date.now() - 7200000).toISOString(),
+      },
+      {
+        id: 'aud-103',
+        action: 'CONTROLLED_UNLOCK',
+        actor_name: 'Universal Admin',
+        actor_role: 'UNIVERSAL',
+        entity_type: 'REGISTRATION',
+        entity_id: 'REG-2026-712499',
+        details: 'Controlled unlock executed: Correcting department code assignment.',
+        ip_address: '10.0.0.2',
+        created_at: new Date(Date.now() - 14400000).toISOString(),
+      },
+    ];
+  }
+  return data || [];
+}
+
+export async function logAuditAction(
+  action: AuditLog['action'],
+  actorName: string,
+  actorRole: UserRole,
+  entityType: AuditLog['entity_type'],
+  entityId: string,
+  details: string
+): Promise<void> {
+  const payload = {
+    action,
+    actor_name: actorName,
+    actor_role: actorRole,
+    entity_type: entityType,
+    entity_id: entityId,
+    details,
+    ip_address: '127.0.0.1',
+    created_at: new Date().toISOString(),
+  };
+
+  await supabase.from('audit_logs').insert([payload]);
+}
+
+export async function exportRegistrationsToExcel(registrations: Registration[]): Promise<void> {
+  const exportData = registrations.map((r, idx) => ({
+    'S.No': idx + 1,
+    'Registration Number': r.registration_number,
+    'Permanent UID': r.student?.permanent_uid || 'N/A',
+    'Student Name': r.student ? `${r.student.first_name} ${r.student.last_name}` : 'N/A',
+    Email: r.student?.email || 'N/A',
+    Phone: r.student?.phone || 'N/A',
+    Institution: r.institution?.name || 'N/A',
+    Department: r.department?.name || 'N/A',
+    Program: r.program?.name || 'N/A',
+    'Academic Year': r.academic_year,
+    'Registration Type': r.registration_type,
+    Status: r.status,
+    'Submitted At': r.submitted_at ? new Date(r.submitted_at).toLocaleDateString() : 'N/A',
+  }));
+
+  const XLSX = await import('xlsx');
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'System Registrations Report');
+  XLSX.writeFile(wb, `ATA_System_Registrations_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

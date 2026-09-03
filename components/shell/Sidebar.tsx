@@ -51,6 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { name: 'Students', href: '/students', icon: GraduationCap },
     { name: 'Institutions', href: '/institutions', icon: Building2 },
     { name: 'Documents', href: '/documents', icon: FileText },
+    { name: 'Audit Logs', href: '/audit-logs', icon: HelpCircle },
   ];
 
   return (

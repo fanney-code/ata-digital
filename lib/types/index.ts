@@ -123,3 +123,16 @@ export interface DashboardMetrics {
     percentage: number;
   }>;
 }
+
+export interface AuditLog {
+  id: string;
+  action: 'REGISTRATION_CREATED' | 'STATUS_CHANGE' | 'APPROVAL' | 'CONTROLLED_UNLOCK' | 'EXCEL_BATCH_IMPORT' | 'DOCUMENT_CAPTURED';
+  actor_name: string;
+  actor_role: UserRole;
+  entity_type: 'REGISTRATION' | 'STUDENT' | 'DOCUMENT';
+  entity_id: string;
+  details: string;
+  ip_address?: string;
+  created_at: string;
+}
+
