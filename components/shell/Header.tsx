@@ -29,25 +29,25 @@ export const Header: React.FC<HeaderProps> = ({
   const displayName = user?.full_name || (currentRole === 'ADMINISTRATOR' ? 'System Admin' : currentRole === 'UNIVERSAL' ? 'Auditor User' : 'Eleanor Vance');
 
   return (
-    <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between shadow-2xs shrink-0">
+    <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/80 px-3 sm:px-6 flex items-center justify-between shadow-2xs shrink-0">
       {/* Left Group: Mobile Menu + Title + Role Badge */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         {/* Mobile menu trigger */}
         <button
           onClick={onToggleMobileSidebar}
-          className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
           aria-label="Toggle Navigation"
         >
           <Menu className="h-5 w-5" />
         </button>
 
         {/* Page Title */}
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-none">
+        <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight leading-none truncate">
           {title}
         </h1>
 
         {/* Role Pill Badge */}
-        <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200/80 text-[11px] font-semibold text-slate-600 tracking-tight">
+        <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-[10px] font-semibold text-slate-600 tracking-tight shrink-0">
           {roleLabelMap[currentRole]}
         </span>
       </div>
