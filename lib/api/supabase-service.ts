@@ -10,6 +10,7 @@ import {
   WorkflowStatus,
   RegistrationType,
   DashboardMetrics,
+  AuditLog,
 } from '../types';
 
 export interface ExcelStudentImportRow {
