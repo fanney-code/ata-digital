@@ -7,6 +7,10 @@ export type WorkflowStatus =
   | 'CORRECTION_REQUIRED'
   | 'RESUBMITTED'
   | 'APPROVED'
+  | 'GRADUATED'
+  | 'COMPLETED'
+  | 'NOT_COMPLETED'
+  | 'TRANSFERRED'
   | 'ARCHIVED';
 
 export type RegistrationType =
@@ -14,6 +18,44 @@ export type RegistrationType =
   | 'RE_REGISTRATION'
   | 'TRANSFER'
   | 'PROGRAM_PROGRESSION';
+
+export type DurationStatus =
+  | 'NORMAL'
+  | 'EXTENDED'
+  | 'BACKLOG'
+  | 'RE_REGISTRATION_REQUIRED';
+
+export interface DocumentReference {
+  id: string;
+  title: string;
+  type: 'IDENTIFICATION' | 'TRANSCRIPT' | 'CERTIFICATE' | 'OTHER';
+  file_name: string;
+  file_url: string;
+  uploaded_at: string;
+  file_size?: string;
+  verified?: boolean;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: 'CREATE' | 'SUBMIT' | 'CORRECTION' | 'RESUBMIT' | 'APPROVE' | 'UNLOCK' | 'IMPORT' | 'STATUS_CHANGE' | 'FINAL_LIFECYCLE';
+  entity_type: 'REGISTRATION' | 'STUDENT' | 'INSTITUTION' | 'DOCUMENT';
+  entity_id: string;
+  performed_by: string;
+  performed_by_role: UserRole;
+  details: string;
+  timestamp: string;
+}
+
+export interface UserAccessScope {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  role: UserRole;
+  assignedInstitutions: string[];
+  assignedDepartments: string[];
+  assignedPrograms: string[];
+}
 
 export interface Profile {
   id: string;
@@ -45,6 +87,7 @@ export interface Program {
   name: string;
   code: string;
   degree_level?: string;
+  expected_duration_years?: number;
   created_at?: string;
 }
 
@@ -76,6 +119,9 @@ export interface Registration {
   rejection_reason?: string;
   submitted_at?: string;
   reviewed_at?: string;
+  unlocked_at?: string;
+  unlocked_by?: string;
+  unlock_reason?: string;
   created_at?: string;
   updated_at?: string;
   
@@ -84,6 +130,8 @@ export interface Registration {
   institution?: Institution;
   department?: Department;
   program?: Program;
+  documents?: DocumentReference[];
+  duration_status?: DurationStatus;
 }
 
 export interface DashboardMetrics {

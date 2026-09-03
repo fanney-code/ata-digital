@@ -37,19 +37,81 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Helper to extract field value dynamically from Excel row regardless of header casing
-  const getFieldValue = (row: any, keys: string[]): string => {
+  // Helper to normalize keys by stripping non-alphanumeric characters
+  const normalizeKey = (k: string): string =>
+    k.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Helper to extract field value dynamically from Excel row using strict alias matching
+  const getFieldValue = (row: Record<string, any>, keyAliases: string[]): string => {
+    const normalizedAliases = keyAliases.map(normalizeKey);
     const rowKeys = Object.keys(row);
-    for (const key of keys) {
-      const foundKey = rowKeys.find(
-        (k) => k.trim().toLowerCase() === key.trim().toLowerCase()
-      );
-      if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
-        const val = String(row[foundKey]).trim();
-        if (val) return val;
+
+    // 1. Exact normalized key match (e.g. "first_name" -> "firstname", "STUDENT NAME" -> "studentname")
+    for (const rawKey of rowKeys) {
+      const normKey = normalizeKey(rawKey);
+      if (normalizedAliases.includes(normKey)) {
+        const val = row[rawKey];
+        if (val !== undefined && val !== null) {
+          const strVal = String(val).trim();
+          if (strVal) return strVal;
+        }
       }
     }
+
+    // 2. Strict prefix/suffix match (avoid loose substring collisions like 'studentname' matching 'familyname')
+    for (const rawKey of rowKeys) {
+      const normKey = normalizeKey(rawKey);
+      if (!normKey) continue;
+      for (const alias of normalizedAliases) {
+        if (!alias) continue;
+        if (normKey.startsWith(alias) || normKey.endsWith(alias)) {
+          const val = row[rawKey];
+          if (val !== undefined && val !== null) {
+            const strVal = String(val).trim();
+            if (strVal) return strVal;
+          }
+        }
+      }
+    }
+
     return '';
+  };
+
+  // Helper to detect and skip non-student summary/footer/total rows in Excel sheet
+  const isSummaryOrFooterRow = (rowObj: Record<string, any>): boolean => {
+    const joinedValues = Object.values(rowObj)
+      .map((v) => String(v).toLowerCase().trim())
+      .join(' ');
+
+    if (!joinedValues) return true;
+
+    const footerKeywords = [
+      'total',
+      'registered for',
+      'students registered',
+      'program on',
+      'summary',
+      'note:',
+      'prepared by',
+      'checked by',
+      'signature',
+      'page ',
+      'end of report',
+      'date:',
+      'count:',
+    ];
+
+    for (const kw of footerKeywords) {
+      if (joinedValues.includes(kw)) {
+        return true;
+      }
+    }
+
+    if (/\b\d+\s+students\b/i.test(joinedValues) || /\btotal\s+\d+/i.test(joinedValues)) {
+      return true;
+    }
+
+    return false;
   };
 
   // Handle Excel file selection & parsing
@@ -63,36 +125,152 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const buffer = evt.target?.result;
-        const workbook = XLSX.read(buffer, { type: 'binary' });
+        const buffer = evt.target?.result as ArrayBuffer;
+        const workbook = XLSX.read(buffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-        const mapped: ExcelStudentImportRow[] = rawJson.map((row, idx) => {
-          let firstName = getFieldValue(row, ['first name', 'firstname', 'first_name', 'given name']);
-          let lastName = getFieldValue(row, ['last name', 'lastname', 'last_name', 'surname', 'family name']);
-          const fullName = getFieldValue(row, ['name', 'student name', 'full name', 'student_name']);
+        // 1. Read sheet as 2D matrix array to handle title rows / offset header rows cleanly
+        const rowsMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          defval: '',
+          raw: false,
+        });
 
-          if ((!firstName || !lastName) && fullName) {
-            const parts = fullName.split(' ');
-            firstName = parts[0] || 'Student';
-            lastName = parts.slice(1).join(' ') || 'Record';
+        if (!rowsMatrix || rowsMatrix.length === 0) {
+          setStatusMessage({
+            type: 'error',
+            text: 'The selected Excel sheet appears to be empty.',
+          });
+          return;
+        }
+
+        // 2. Dynamic Header Row Auto-Detection (scan top 15 rows for header keywords)
+        const headerKeywords = [
+          'name', 'first', 'last', 'student', 'email', 'phone', 'contact', 'mobile',
+          'institution', 'college', 'dept', 'department', 'program', 'course',
+          'year', 'type', 'reg', 'roll', 'uid', 'session', 'batch'
+        ];
+
+        let headerRowIndex = 0;
+        let maxMatchCount = 0;
+
+        for (let r = 0; r < Math.min(rowsMatrix.length, 15); r++) {
+          const rowCells = rowsMatrix[r];
+          if (!Array.isArray(rowCells)) continue;
+
+          let matchCount = 0;
+          rowCells.forEach((cell) => {
+            if (cell) {
+              const norm = normalizeKey(String(cell));
+              if (headerKeywords.some((kw) => norm.includes(kw))) {
+                matchCount++;
+              }
+            }
+          });
+
+          if (matchCount > maxMatchCount) {
+            maxMatchCount = matchCount;
+            headerRowIndex = r;
+          }
+        }
+
+        const headerRow = rowsMatrix[headerRowIndex] || [];
+        const headers = headerRow.map((cell, cIdx) =>
+          cell ? String(cell).trim() : `Column_${cIdx + 1}`
+        );
+
+        // Build data row objects starting after headerRowIndex
+        const rawJsonData: Record<string, any>[] = [];
+        for (let r = headerRowIndex + 1; r < rowsMatrix.length; r++) {
+          const rowCells = rowsMatrix[r];
+          if (!Array.isArray(rowCells) || rowCells.every((c) => !c || String(c).trim() === '')) {
+            continue; // Skip blank rows
+          }
+          const rowObj: Record<string, any> = {};
+          headers.forEach((h, cIdx) => {
+            rowObj[h] = rowCells[cIdx] !== undefined ? rowCells[cIdx] : '';
+          });
+          rawJsonData.push(rowObj);
+        }
+
+        // Filter out footer / summary rows
+        const validStudentRows = rawJsonData.filter((rowObj) => !isSummaryOrFooterRow(rowObj));
+
+        if (validStudentRows.length === 0) {
+          setStatusMessage({
+            type: 'error',
+            text: 'No student data rows found below headers in the Excel file.',
+          });
+          return;
+        }
+
+        const mapped: ExcelStudentImportRow[] = validStudentRows.map((row, idx) => {
+          let firstName = getFieldValue(row, [
+            'first name', 'firstname', 'first_name', 'first-name', 'fname', 'given name', 'givenname'
+          ]);
+          let lastName = getFieldValue(row, [
+            'last name', 'lastname', 'last_name', 'last-name', 'lname', 'surname', 'family name', 'familyname'
+          ]);
+
+          // Explicit full name match if first/last name columns are missing
+          const fullName = getFieldValue(row, [
+            'student name', 'student_name', 'full name', 'fullname', 'candidate name', 'applicant name', 'name', 'student'
+          ]);
+
+          if (!firstName && !lastName && fullName) {
+            const parts = fullName.trim().split(/\s+/);
+            if (parts.length === 1) {
+              firstName = parts[0];
+              lastName = '';
+            } else if (parts.length > 1) {
+              firstName = parts[0];
+              lastName = parts.slice(1).join(' ');
+            }
+          } else if (!firstName && fullName) {
+            firstName = fullName.trim();
           }
 
-          if (!firstName) firstName = `Student`;
-          if (!lastName) lastName = `${idx + 1}`;
+          // Fallbacks only if name is completely missing
+          if (!firstName && !lastName) {
+            firstName = `Student`;
+            lastName = `${idx + 1}`;
+          } else if (!firstName) {
+            firstName = `Student`;
+          }
 
-          const email = getFieldValue(row, ['email', 'email address', 'email_address', 'mail']) ||
-                        `${firstName.toLowerCase()}.${lastName.toLowerCase()}_${idx + 1}@student.edu`;
+          const rawEmail = getFieldValue(row, [
+            'email', 'email address', 'email_address', 'email id', 'emailid', 'mail', 'mail id', 'mail_id', 'e-mail'
+          ]);
 
-          const phone = getFieldValue(row, ['phone', 'phone number', 'contact', 'mobile']);
-          const instName = getFieldValue(row, ['institution', 'institution name', 'institution_name', 'college', 'school', 'university']);
-          const deptName = getFieldValue(row, ['department', 'department name', 'department_name', 'dept']);
-          const progName = getFieldValue(row, ['program', 'program name', 'program_name', 'course', 'degree']);
-          const academicYear = getFieldValue(row, ['academic year', 'academic_year', 'year', 'session']) || '2026-2027';
-          
-          let regTypeRaw = getFieldValue(row, ['registration type', 'registration_type', 'type', 'reg_type']);
+          const cleanFirstName = firstName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'student';
+          const cleanLastName = (lastName || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'stu';
+
+          const email = rawEmail || `${cleanFirstName}.${cleanLastName}_${idx + 1}@student.edu`;
+
+          const phone = getFieldValue(row, [
+            'phone', 'phone number', 'phonenumber', 'contact', 'contact number', 'mobile', 'mobile number', 'ph', 'cell'
+          ]);
+
+          const instName = getFieldValue(row, [
+            'institution', 'institution name', 'institution_name', 'college', 'college name', 'school', 'university', 'campus', 'inst'
+          ]);
+
+          const deptName = getFieldValue(row, [
+            'department', 'department name', 'department_name', 'dept', 'dept name', 'branch', 'stream'
+          ]);
+
+          const progName = getFieldValue(row, [
+            'program', 'program name', 'program_name', 'course', 'course name', 'degree', 'specialization', 'discipline'
+          ]);
+
+          const academicYear = getFieldValue(row, [
+            'academic year', 'academic_year', 'year', 'session', 'batch', 'ay'
+          ]) || '2026-2027';
+
+          let regTypeRaw = getFieldValue(row, [
+            'registration type', 'registration_type', 'reg type', 'type', 'category'
+          ]);
           let regType: RegistrationType = 'INITIAL_REGISTRATION';
           if (regTypeRaw) {
             const normalized = regTypeRaw.toUpperCase().replace(/\s+/g, '_');
@@ -122,7 +300,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         });
       }
     };
-    reader.readAsBinaryString(selectedFile);
+
+    reader.readAsArrayBuffer(selectedFile);
   };
 
   // Download Sample Excel Template
@@ -319,7 +498,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                       <tr key={idx} className="hover:bg-slate-50/60">
                         <td className="py-2.5 px-4 text-slate-400">{idx + 1}</td>
                         <td className="py-2.5 px-4 font-semibold text-slate-900 font-sans">
-                          {row.first_name} {row.last_name}
+                          {`${row.first_name} ${row.last_name || ''}`.trim()}
                         </td>
                         <td className="py-2.5 px-4 text-slate-600">{row.email}</td>
                         <td className="py-2.5 px-4 text-slate-600 font-sans text-[10px]">

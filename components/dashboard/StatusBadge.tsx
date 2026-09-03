@@ -44,6 +44,30 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
       text: 'text-emerald-700',
       border: 'border-emerald-200',
     },
+    GRADUATED: {
+      label: 'GRADUATED',
+      bg: 'bg-emerald-100',
+      text: 'text-emerald-900',
+      border: 'border-emerald-300',
+    },
+    COMPLETED: {
+      label: 'COMPLETED',
+      bg: 'bg-teal-50',
+      text: 'text-teal-800',
+      border: 'border-teal-300',
+    },
+    NOT_COMPLETED: {
+      label: 'NOT COMPLETED',
+      bg: 'bg-orange-50',
+      text: 'text-orange-800',
+      border: 'border-orange-300',
+    },
+    TRANSFERRED: {
+      label: 'TRANSFERRED',
+      bg: 'bg-indigo-50',
+      text: 'text-indigo-800',
+      border: 'border-indigo-300',
+    },
     ARCHIVED: {
       label: 'ARCHIVED',
       bg: 'bg-zinc-100',

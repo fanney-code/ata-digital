@@ -434,6 +434,10 @@ class LocalFallbackStore {
       CORRECTION_REQUIRED: { label: 'Correction Required', color: '#f59e0b' },
       RESUBMITTED: { label: 'Resubmitted', color: '#06b6d4' },
       APPROVED: { label: 'Approved', color: '#10b981' },
+      GRADUATED: { label: 'Graduated', color: '#059669' },
+      COMPLETED: { label: 'Completed', color: '#0d9488' },
+      NOT_COMPLETED: { label: 'Not Completed', color: '#ea580c' },
+      TRANSFERRED: { label: 'Transferred', color: '#4f46e5' },
       ARCHIVED: { label: 'Archived', color: '#475569' },
     };
 

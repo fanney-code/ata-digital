@@ -35,6 +35,10 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
     { name: 'B.B.A. Marketing', count: 1500 },
   ];
 
+  const durationExceptions = registrations.filter(
+    (r) => r.duration_status && r.duration_status !== 'NORMAL'
+  );
+
   return (
     <div className="space-y-6">
       {/* Admin Action Header */}
@@ -80,7 +84,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
         />
       </div>
 
-      {/* Main Grid (Left Column: Attention Required, Right Column: Analytics Sidebar) */}
+      {/* Main Grid (Left Column: Attention Required & Exceptions, Right Column: Analytics Sidebar) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column (Wide) */}
         <div className="lg:col-span-2 space-y-6">
@@ -89,6 +93,54 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
             onSelectRegistration={onSelectRegistration}
             onViewAll={onViewAllRegistrations}
           />
+
+          {/* Duration Exceptions & Alerts Widget */}
+          {durationExceptions.length > 0 && (
+            <div className="bg-white border border-amber-200/90 rounded-xl p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-amber-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900">
+                      Course Duration Exceptions ({durationExceptions.length})
+                    </h3>
+                    <p className="text-[10px] text-slate-500">
+                      Candidates exceeding expected program completion timeline
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                  Attention Required
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {durationExceptions.slice(0, 5).map((reg) => (
+                  <div
+                    key={reg.id}
+                    onClick={() => onSelectRegistration(reg)}
+                    className="py-2.5 flex items-center justify-between hover:bg-slate-50/80 p-2 rounded-lg cursor-pointer transition-colors"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-slate-900">{reg.registration_number}</span>
+                        <span className="text-xs font-semibold text-slate-800">{reg.student ? `${reg.student.first_name} ${reg.student.last_name}` : 'Student'}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {reg.institution?.name || 'Institution'} • Cycle <span className="font-mono font-semibold text-slate-700">{reg.academic_year}</span>
+                      </div>
+                    </div>
+
+                    <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-bold font-sans text-[10px] border border-amber-200 shrink-0">
+                      {reg.duration_status?.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column Stack */}

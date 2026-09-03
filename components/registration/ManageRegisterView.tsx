@@ -5,7 +5,7 @@ import { Registration, UserRole } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
 import { ExcelImportModal } from './ExcelImportModal';
 import { EditRegistrationModal } from './EditRegistrationModal';
-import { deleteRegistration, deleteRegistrationsBulk } from '@/lib/api/supabase-service';
+import { deleteRegistration, deleteRegistrationsBulk, exportRegistrationsToCSV } from '@/lib/api/supabase-service';
 import {
   FileCheck2,
   Plus,
@@ -146,6 +146,15 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
 
         {/* Registrar Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            onClick={() => exportRegistrationsToCSV(filteredRegistrations)}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50/80 hover:bg-emerald-100 text-emerald-700 font-bold text-xs shadow-2xs transition-all"
+            title="Download filtered student registrations as CSV report file"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Export CSV Report
+          </button>
+
           <button
             onClick={() => setIsExcelModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 font-bold text-xs shadow-2xs transition-all"
@@ -288,6 +297,25 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
                           {reg.registration_number}
                         </span>
                         <StatusBadge status={reg.status} size="sm" />
+
+                        {reg.duration_status === 'EXTENDED' && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold font-sans text-[10px] border border-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-amber-500" />
+                            Extended
+                          </span>
+                        )}
+                        {reg.duration_status === 'BACKLOG' && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 font-bold font-sans text-[10px] border border-rose-300 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-rose-500" />
+                            Backlog Alert
+                          </span>
+                        )}
+                        {reg.duration_status === 'RE_REGISTRATION_REQUIRED' && (
+                          <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold font-sans text-[10px] border border-purple-300 flex items-center gap-1">
+                            <Calendar className="h-3 w-3 text-purple-500" />
+                            Re-Reg Required
+                          </span>
+                        )}
                       </div>
 
                       <h3

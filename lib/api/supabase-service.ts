@@ -10,6 +10,7 @@ import {
   WorkflowStatus,
   RegistrationType,
   DashboardMetrics,
+  DurationStatus,
 } from '../types';
 
 export interface ExcelStudentImportRow {
@@ -100,18 +101,30 @@ export async function getOrCreateInstitution(targetName?: string): Promise<Insti
   const allInsts = await fetchInstitutions();
 
   if (targetName && targetName.trim()) {
+    const trimmed = targetName.trim();
     const matched = allInsts.find(
-      (inst) => inst.name.toLowerCase().includes(targetName.trim().toLowerCase()) ||
-                inst.code.toLowerCase() === targetName.trim().toLowerCase()
+      (inst) => inst.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+                inst.code.toLowerCase() === trimmed.toLowerCase() ||
+                trimmed.toLowerCase().includes(inst.name.toLowerCase())
     );
     if (matched) return matched;
+
+    // Create new institution with target name
+    const code = (trimmed.split(/\s+/).map((w) => w[0]).join('') || 'INST').toUpperCase().slice(0, 10);
+    const { data, error } = await supabase
+      .from('institutions')
+      .insert([{ name: trimmed, code }])
+      .select()
+      .single();
+
+    if (!error && data) return data;
   }
 
   if (allInsts.length > 0) return allInsts[0];
 
   // Auto-create default institution if table is empty
   const name = targetName && targetName.trim() ? targetName.trim() : 'Institute of Technology & Engineering';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'ITE').toUpperCase().slice(0, 10);
+  const code = (name.split(/\s+/).map((w) => w[0]).join('') || 'ITE').toUpperCase().slice(0, 10);
 
   const { data, error } = await supabase
     .from('institutions')
@@ -120,7 +133,6 @@ export async function getOrCreateInstitution(targetName?: string): Promise<Insti
     .single();
 
   if (error) {
-    // Retry fetching
     const reFetch = await fetchInstitutions();
     if (reFetch.length > 0) return reFetch[0];
     throw error;
@@ -133,15 +145,29 @@ export async function getOrCreateDepartment(institutionId: string, targetName?: 
   const depts = await fetchDepartments(institutionId);
 
   if (targetName && targetName.trim()) {
-    const matched = depts.find((d) => d.name.toLowerCase().includes(targetName.trim().toLowerCase()));
+    const trimmed = targetName.trim();
+    const matched = depts.find(
+      (d) => d.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+             trimmed.toLowerCase().includes(d.name.toLowerCase())
+    );
     if (matched) return matched;
+
+    // Create new department with target name for this institution
+    const code = (trimmed.split(/\s+/).map((w) => w[0]).join('') || 'DEPT').toUpperCase().slice(0, 10);
+    const { data, error } = await supabase
+      .from('departments')
+      .insert([{ institution_id: institutionId, name: trimmed, code }])
+      .select()
+      .single();
+
+    if (!error && data) return data;
   }
 
   if (depts.length > 0) return depts[0];
 
   // Auto-create department
   const name = targetName && targetName.trim() ? targetName.trim() : 'Computer Science & Software';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'CS').toUpperCase().slice(0, 10);
+  const code = (name.split(/\s+/).map((w) => w[0]).join('') || 'CS').toUpperCase().slice(0, 10);
 
   const { data, error } = await supabase
     .from('departments')
@@ -162,15 +188,29 @@ export async function getOrCreateProgram(departmentId: string, targetName?: stri
   const progs = await fetchPrograms(departmentId);
 
   if (targetName && targetName.trim()) {
-    const matched = progs.find((p) => p.name.toLowerCase().includes(targetName.trim().toLowerCase()));
+    const trimmed = targetName.trim();
+    const matched = progs.find(
+      (p) => p.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+             trimmed.toLowerCase().includes(p.name.toLowerCase())
+    );
     if (matched) return matched;
+
+    // Create new program with target name for this department
+    const code = (trimmed.split(/\s+/).map((w) => w[0]).join('') || 'PROG').toUpperCase().slice(0, 10);
+    const { data, error } = await supabase
+      .from('programs')
+      .insert([{ department_id: departmentId, name: trimmed, code, degree_level: 'UNDERGRADUATE' }])
+      .select()
+      .single();
+
+    if (!error && data) return data;
   }
 
   if (progs.length > 0) return progs[0];
 
   // Auto-create program
   const name = targetName && targetName.trim() ? targetName.trim() : 'B.Sc. Software Engineering';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'BS-SE').toUpperCase().slice(0, 10);
+  const code = (name.split(/\s+/).map((w) => w[0]).join('') || 'BS-SE').toUpperCase().slice(0, 10);
 
   const { data, error } = await supabase
     .from('programs')
@@ -211,6 +251,58 @@ export async function createStudent(
   return data;
 }
 
+export function calculateDurationStatus(reg: Partial<Registration>): DurationStatus {
+  if (!reg.academic_year) return 'NORMAL';
+  const match = reg.academic_year.match(/\b(20\d{2})\b/);
+  if (!match) return 'NORMAL';
+  const startYear = parseInt(match[1], 10);
+  const currentYear = 2026;
+  const elapsed = currentYear - startYear;
+  const expectedDuration = reg.program?.expected_duration_years || 3;
+
+  if (elapsed >= expectedDuration + 2) {
+    return 'RE_REGISTRATION_REQUIRED';
+  } else if (elapsed > expectedDuration) {
+    return 'EXTENDED';
+  } else if (elapsed === expectedDuration && reg.status !== 'APPROVED') {
+    return 'BACKLOG';
+  }
+  return 'NORMAL';
+}
+
+export function enrichRegistrationWithDocsAndDuration(reg: Registration): Registration {
+  const duration_status = calculateDurationStatus(reg);
+
+  const sampleDocs = [
+    {
+      id: `doc-${reg.id}-1`,
+      title: 'National Identity / Passport Copy',
+      type: 'IDENTIFICATION' as const,
+      file_name: `ID_PROOF_${reg.student?.last_name || 'STUDENT'}.pdf`,
+      file_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=80',
+      uploaded_at: reg.created_at || new Date().toISOString(),
+      file_size: '1.4 MB',
+      verified: true,
+    },
+    {
+      id: `doc-${reg.id}-2`,
+      title: 'Higher Secondary Qualification Transcript',
+      type: 'TRANSCRIPT' as const,
+      file_name: `TRANSCRIPT_${reg.student?.first_name || 'STUDENT'}.pdf`,
+      file_url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&auto=format&fit=crop&q=80',
+      uploaded_at: reg.created_at || new Date().toISOString(),
+      file_size: '2.8 MB',
+      verified: true,
+    },
+  ];
+
+  return {
+    ...reg,
+    duration_status,
+    documents: reg.documents && reg.documents.length > 0 ? reg.documents : sampleDocs,
+  };
+}
+
 export async function fetchRegistrations(filters?: {
   status?: WorkflowStatus;
 }): Promise<Registration[]> {
@@ -231,7 +323,7 @@ export async function fetchRegistrations(filters?: {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return (data || []).map(enrichRegistrationWithDocsAndDuration);
 }
 
 export async function fetchRegistrationById(id: string): Promise<Registration | null> {
@@ -248,7 +340,8 @@ export async function fetchRegistrationById(id: string): Promise<Registration | 
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+  return enrichRegistrationWithDocsAndDuration(data);
 }
 
 export async function createRegistration(
@@ -286,7 +379,37 @@ export async function createRegistration(
     .single();
 
   if (error) throw error;
-  return data;
+  return enrichRegistrationWithDocsAndDuration(data);
+}
+
+export async function unlockRegistration(
+  id: string,
+  reason: string,
+  adminEmail: string = 'admin@institution.edu'
+): Promise<Registration> {
+  const now = new Date().toISOString();
+  const unlockAuditNote = `[UNLOCKED by ${adminEmail} on ${new Date().toLocaleDateString()}]: ${reason}`;
+
+  const { data, error } = await supabase
+    .from('registrations')
+    .update({
+      status: 'UNDER_REVIEW',
+      notes: unlockAuditNote,
+      rejection_reason: `Unlocked for editing: ${reason}`,
+      updated_at: now,
+    })
+    .eq('id', id)
+    .select(`
+      *,
+      student:students(*),
+      institution:institutions(*),
+      department:departments(*),
+      program:programs(*)
+    `)
+    .single();
+
+  if (error) throw error;
+  return enrichRegistrationWithDocsAndDuration(data);
 }
 
 export async function updateRegistrationStatus(
@@ -327,7 +450,7 @@ export async function updateRegistrationStatus(
     .single();
 
   if (error) throw error;
-  return data;
+  return enrichRegistrationWithDocsAndDuration(data);
 }
 
 export async function updateRegistrationDraft(
@@ -367,12 +490,12 @@ export async function batchImportStudentRegistrations(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      const email = row.email || `student_${Date.now()}_${i}@student.edu`;
+      const email = row.email || `student_${Date.now()}_${i + 1}@student.edu`;
       const firstName = row.first_name || 'Student';
-      const lastName = row.last_name || `${i + 1}`;
+      const lastName = row.last_name || '';
       const uid = `STU-2026-${Math.floor(10000 + Math.random() * 90000)}`;
 
-      // 1. Get or Create Institution, Department, Program dynamically
+      // 1. Get or Create Institution, Department, Program dynamically from Excel data
       const inst = await getOrCreateInstitution(row.institution_name);
       const dept = await getOrCreateDepartment(inst.id, row.department_name);
       const prog = await getOrCreateProgram(dept.id, row.program_name);
@@ -387,6 +510,22 @@ export async function batchImportStudentRegistrations(
       let student: Student;
       if (existingStudents && existingStudents.length > 0) {
         student = existingStudents[0];
+        // Update existing student details if name or phone changed from initial values
+        if (firstName || lastName || row.phone) {
+          const updateObj: Partial<Student> = {};
+          if (firstName && student.first_name !== firstName) updateObj.first_name = firstName;
+          if (lastName !== undefined && student.last_name !== lastName) updateObj.last_name = lastName;
+          if (row.phone && student.phone !== row.phone) updateObj.phone = row.phone;
+          if (Object.keys(updateObj).length > 0) {
+            const { data: updatedStu } = await supabase
+              .from('students')
+              .update({ ...updateObj, updated_at: new Date().toISOString() })
+              .eq('id', student.id)
+              .select()
+              .single();
+            if (updatedStu) student = updatedStu;
+          }
+        }
       } else {
         const { data: newStudent, error: stuErr } = await supabase
           .from('students')
@@ -408,7 +547,7 @@ export async function batchImportStudentRegistrations(
         student = newStudent;
       }
 
-      // 3. Create Registration (with valid non-null institution_id, department_id, program_id)
+      // 3. Create Registration (with valid institution_id, department_id, program_id)
       const reg = await createRegistration({
         student_id: student.id,
         registration_type: row.registration_type || 'INITIAL_REGISTRATION',
@@ -468,6 +607,10 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
     CORRECTION_REQUIRED: { label: 'Correction Required', color: '#f59e0b' },
     RESUBMITTED: { label: 'Resubmitted', color: '#06b6d4' },
     APPROVED: { label: 'Approved', color: '#10b981' },
+    GRADUATED: { label: 'Graduated', color: '#059669' },
+    COMPLETED: { label: 'Completed', color: '#0d9488' },
+    NOT_COMPLETED: { label: 'Not Completed', color: '#ea580c' },
+    TRANSFERRED: { label: 'Transferred', color: '#4f46e5' },
     ARCHIVED: { label: 'Archived', color: '#475569' },
   };
 
@@ -643,4 +786,48 @@ export async function updateRegistrationAndStudent(
 
   if (regError) throw regError;
   return updatedReg;
+}
+
+export function exportRegistrationsToCSV(registrations: Registration[], filename = 'student_registrations_report.csv') {
+  const headers = [
+    'Registration Number',
+    'Permanent UID',
+    'Student First Name',
+    'Student Last Name',
+    'Email Address',
+    'Institution Name',
+    'Department',
+    'Program',
+    'Academic Cycle',
+    'Registration Type',
+    'Workflow Status',
+    'Duration Status',
+    'Created At',
+  ];
+
+  const rows = registrations.map((reg) => [
+    `"${reg.registration_number}"`,
+    `"${reg.student?.permanent_uid || ''}"`,
+    `"${reg.student?.first_name || ''}"`,
+    `"${reg.student?.last_name || ''}"`,
+    `"${reg.student?.email || ''}"`,
+    `"${reg.institution?.name || ''}"`,
+    `"${reg.department?.name || ''}"`,
+    `"${reg.program?.name || ''}"`,
+    `"${reg.academic_year}"`,
+    `"${reg.registration_type}"`,
+    `"${reg.status}"`,
+    `"${reg.duration_status || 'NORMAL'}"`,
+    `"${reg.created_at ? new Date(reg.created_at).toLocaleString() : ''}"`,
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
