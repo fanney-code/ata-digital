@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Registration, UserRole, WorkflowStatus } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
 import { CorrectionModal } from './CorrectionModal';
+import { MobileWebCameraCapture } from './MobileWebCameraCapture';
 import {
   ArrowLeft,
   User,
@@ -13,6 +14,9 @@ import {
   FileText,
   Send,
   ShieldAlert,
+  Camera,
+  RefreshCw,
+  PlusCircle,
 } from 'lucide-react';
 
 interface RegistrationDetailViewProps {
@@ -21,6 +25,7 @@ interface RegistrationDetailViewProps {
   onBack: () => void;
   onUpdateStatus: (id: string, status: WorkflowStatus, notes?: string) => Promise<void>;
   onEditDraft?: (reg: Registration) => void;
+  onReRegisterStudent?: (student: any) => void;
 }
 
 export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
@@ -29,11 +34,14 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
   onBack,
   onUpdateStatus,
   onEditDraft,
+  onReRegisterStudent,
 }) => {
   const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resubmitNotes, setResubmitNotes] = useState('');
   const [showResubmitBox, setShowResubmitBox] = useState(false);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [capturedDocs, setCapturedDocs] = useState<string[]>([]);
 
   const student = registration.student;
   const institution = registration.institution;
@@ -241,37 +249,54 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Student Information Card */}
         <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <User className="h-5 w-5" />
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <User className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Student Identity
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Permanent lifetime record
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Student Profile
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Verified candidate information
-              </p>
-            </div>
+
+            {/* Registrar Actions inside Student Identity Card */}
+            {currentRole === 'REGISTRAR' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCameraModalOpen(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors"
+                  title="Open live phone camera for document capture"
+                >
+                  <Camera className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Capture Doc</span>
+                </button>
+
+                {onReRegisterStudent && student && (
+                  <button
+                    type="button"
+                    onClick={() => onReRegisterStudent(student)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition-colors"
+                    title="Re-register or progress student while keeping Permanent UID"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Re-Register Student</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-xs">
+          <div className="space-y-3 text-xs">
             <div>
-              <span className="block text-slate-400 font-medium">Permanent UID</span>
+              <span className="block text-slate-400 font-medium">Permanent Student UID</span>
               <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-sm">
                 {student?.permanent_uid || 'N/A'}
-              </span>
-            </div>
-            <div>
-              <span className="block text-slate-400 font-medium">Full Name</span>
-              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                {student ? `${student.first_name} ${student.last_name}` : 'N/A'}
-              </span>
-            </div>
-            <div>
-              <span className="block text-slate-400 font-medium">Email Address</span>
-              <span className="font-medium text-slate-800 dark:text-slate-200">
-                {student?.email || 'N/A'}
               </span>
             </div>
             <div>
@@ -402,6 +427,17 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
         onSubmit={handleCorrectionSubmit}
         isSubmitting={isSubmitting}
       />
+
+      {/* Mobile Web Camera Capture Modal */}
+      {isCameraModalOpen && (
+        <MobileWebCameraCapture
+          onClose={() => setIsCameraModalOpen(false)}
+          onCapture={(dataUrl) => {
+            setCapturedDocs((prev) => [...prev, dataUrl]);
+            setIsCameraModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

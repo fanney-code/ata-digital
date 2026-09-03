@@ -30,6 +30,7 @@ interface ManageRegisterViewProps {
   currentRole: UserRole;
   onSelectRegistration: (reg: Registration) => void;
   onNewRegistration: () => void;
+  onReRegisterStudent?: (student: any) => void;
   onReload?: () => void;
 }
 
@@ -37,6 +38,7 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
   registrations,
   onSelectRegistration,
   onNewRegistration,
+  onReRegisterStudent,
   onReload,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');

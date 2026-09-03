@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   batchImportStudentRegistrations,
+  fetchStudents,
   ExcelStudentImportRow,
 } from '@/lib/api/supabase-service';
 import { RegistrationType } from '@/lib/types';
@@ -28,7 +29,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onSuccess,
 }) => {
   const [file, setFile] = useState<File | null>(null);
-  const [parsedRows, setParsedRows] = useState<ExcelStudentImportRow[]>([]);
+  const [parsedRows, setParsedRows] = useState<(ExcelStudentImportRow & { isDuplicate?: boolean; existingUid?: string })[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
@@ -61,7 +62,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setStatusMessage(null);
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const buffer = evt.target?.result;
         const workbook = XLSX.read(buffer, { type: 'binary' });
@@ -69,30 +70,82 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const sheet = workbook.Sheets[sheetName];
         const rawJson: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-        const mapped: ExcelStudentImportRow[] = rawJson.map((row, idx) => {
-          let firstName = getFieldValue(row, ['first name', 'firstname', 'first_name', 'given name']);
-          let lastName = getFieldValue(row, ['last name', 'lastname', 'last_name', 'surname', 'family name']);
-          const fullName = getFieldValue(row, ['name', 'student name', 'full name', 'student_name']);
+        // Fetch existing database students to flag duplicate matches during staging
+        const existingStudents = await fetchStudents();
+
+        const mapped = rawJson.map((row, idx) => {
+          let firstName = getFieldValue(row, [
+            'first name',
+            'firstname',
+            'first_name',
+            'given name',
+            'given_name',
+            'fname',
+            'candidate first name',
+            'student first name'
+          ]);
+          let lastName = getFieldValue(row, [
+            'last name',
+            'lastname',
+            'last_name',
+            'surname',
+            'family name',
+            'family_name',
+            'lname',
+            'candidate last name',
+            'student last name'
+          ]);
+          const fullName = getFieldValue(row, [
+            'name',
+            'student name',
+            'full name',
+            'student_name',
+            'fullname',
+            'candidate name',
+            'candidate_name',
+            'student'
+          ]);
 
           if ((!firstName || !lastName) && fullName) {
-            const parts = fullName.split(' ');
-            firstName = parts[0] || 'Student';
-            lastName = parts.slice(1).join(' ') || 'Record';
+            const parts = fullName.trim().split(/\s+/);
+            if (parts.length === 1) {
+              firstName = parts[0];
+              lastName = '';
+            } else if (parts.length > 1) {
+              firstName = parts[0];
+              lastName = parts.slice(1).join(' ');
+            }
           }
 
-          if (!firstName) firstName = `Student`;
-          if (!lastName) lastName = `${idx + 1}`;
+          // Fallback only if no valid name or full name exists in the Excel row
+          if (!firstName && !lastName) {
+            firstName = `Student`;
+            lastName = `${idx + 1}`;
+          } else if (!firstName && lastName) {
+            firstName = lastName;
+            lastName = '';
+          }
 
-          const email = getFieldValue(row, ['email', 'email address', 'email_address', 'mail']) ||
-                        `${firstName.toLowerCase()}.${lastName.toLowerCase()}_${idx + 1}@student.edu`;
+          const extractedEmail = getFieldValue(row, [
+            'email',
+            'email address',
+            'email_address',
+            'mail',
+            'e-mail',
+            'student email',
+            'contact email'
+          ]);
+          const cleanFirst = (firstName || 'student').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const cleanLast = (lastName || 'record').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const email = extractedEmail || `${cleanFirst}${cleanLast ? '.' + cleanLast : ''}_${idx + 1}@student.edu`;
 
-          const phone = getFieldValue(row, ['phone', 'phone number', 'contact', 'mobile']);
-          const instName = getFieldValue(row, ['institution', 'institution name', 'institution_name', 'college', 'school', 'university']);
-          const deptName = getFieldValue(row, ['department', 'department name', 'department_name', 'dept']);
-          const progName = getFieldValue(row, ['program', 'program name', 'program_name', 'course', 'degree']);
-          const academicYear = getFieldValue(row, ['academic year', 'academic_year', 'year', 'session']) || '2026-2027';
+          const phone = getFieldValue(row, ['phone', 'phone number', 'contact', 'mobile', 'mobile number', 'phone_number']);
+          const instName = getFieldValue(row, ['institution', 'institution name', 'institution_name', 'college', 'school', 'university', 'institute']);
+          const deptName = getFieldValue(row, ['department', 'department name', 'department_name', 'dept', 'branch', 'stream']);
+          const progName = getFieldValue(row, ['program', 'program name', 'program_name', 'course', 'degree', 'programme']);
+          const academicYear = getFieldValue(row, ['academic year', 'academic_year', 'year', 'session', 'batch']) || '2026-2027';
           
-          let regTypeRaw = getFieldValue(row, ['registration type', 'registration_type', 'type', 'reg_type']);
+          let regTypeRaw = getFieldValue(row, ['registration type', 'registration_type', 'type', 'reg_type', 'mode']);
           let regType: RegistrationType = 'INITIAL_REGISTRATION';
           if (regTypeRaw) {
             const normalized = regTypeRaw.toUpperCase().replace(/\s+/g, '_');
@@ -100,6 +153,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             else if (normalized.includes('TRANSFER')) regType = 'TRANSFER';
             else if (normalized.includes('PROGRESSION')) regType = 'PROGRAM_PROGRESSION';
           }
+
+          // Staging Duplicate Check Logic
+          const matchedStu = existingStudents.find((s: any) => {
+            const sameEmail = email && s.email.toLowerCase() === email.toLowerCase();
+            const sameName =
+              s.first_name.toLowerCase() === firstName.toLowerCase() &&
+              s.last_name.toLowerCase() === lastName.toLowerCase();
+            return sameEmail || sameName;
+          });
 
           return {
             first_name: firstName,
@@ -111,6 +173,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             institution_name: instName,
             department_name: deptName,
             program_name: progName,
+            isDuplicate: !!matchedStu,
+            existingUid: matchedStu?.permanent_uid,
           };
         });
 
@@ -311,15 +375,23 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                       <th className="py-2.5 px-4">Email</th>
                       <th className="py-2.5 px-4">Institution / Department</th>
                       <th className="py-2.5 px-4">Academic Year</th>
-                      <th className="py-2.5 px-4">Type</th>
+                      <th className="py-2.5 px-4">Status / Match</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                     {parsedRows.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/60">
+                      <tr key={idx} className={`hover:bg-slate-50/60 ${row.isDuplicate ? 'bg-amber-50/50' : ''}`}>
                         <td className="py-2.5 px-4 text-slate-400">{idx + 1}</td>
                         <td className="py-2.5 px-4 font-semibold text-slate-900 font-sans">
-                          {row.first_name} {row.last_name}
+                          <div className="flex items-center gap-1.5">
+                            <span>{row.first_name} {row.last_name}</span>
+                            {row.isDuplicate && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3 text-amber-600" />
+                                Existing Candidate ({row.existingUid})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 px-4 text-slate-600">{row.email}</td>
                         <td className="py-2.5 px-4 text-slate-600 font-sans text-[10px]">
@@ -327,8 +399,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                           <div className="text-slate-400 text-[9px]">{row.department_name || 'Default Department'}</div>
                         </td>
                         <td className="py-2.5 px-4 text-slate-600">{row.academic_year}</td>
-                        <td className="py-2.5 px-4 text-blue-600 font-semibold font-sans text-[10px]">
-                          {row.registration_type}
+                        <td className="py-2.5 px-4 font-semibold font-sans text-[10px]">
+                          <span className={row.isDuplicate ? 'text-amber-700 font-bold' : 'text-blue-600'}>
+                            {row.isDuplicate ? 'Reuse Existing UID' : row.registration_type}
+                          </span>
                         </td>
                       </tr>
                     ))}

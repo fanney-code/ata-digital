@@ -21,6 +21,7 @@ export default function RegistrationsPage() {
 
   const [activeView, setActiveView] = useState<'LIST' | 'DETAIL' | 'NEW'>('LIST');
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
+  const [reRegisterStudent, setReRegisterStudent] = useState<any | null>(null);
 
   useEffect(() => {
     if (user?.role) {
@@ -50,6 +51,11 @@ export default function RegistrationsPage() {
     setActiveView('DETAIL');
   };
 
+  const handleStartReRegistration = (student: any) => {
+    setReRegisterStudent(student);
+    setActiveView('NEW');
+  };
+
   const handleUpdateStatus = async (id: string, status: WorkflowStatus, notes?: string) => {
     try {
       const updated = await updateRegistrationStatus(id, status, notes);
@@ -62,6 +68,7 @@ export default function RegistrationsPage() {
 
   const handleNewRegistrationSuccess = async (newReg: Registration) => {
     setSelectedRegistration(newReg);
+    setReRegisterStudent(null);
     setActiveView('DETAIL');
     await loadRegistrations();
   };
@@ -70,10 +77,13 @@ export default function RegistrationsPage() {
     <PortalLayout
       currentRole={currentRole}
       onRoleChange={setCurrentRole}
-      onNewRegistration={() => setActiveView('NEW')}
+      onNewRegistration={() => {
+        setReRegisterStudent(null);
+        setActiveView('NEW');
+      }}
       title={
         activeView === 'NEW'
-          ? 'New Registration'
+          ? reRegisterStudent ? `Re-Registering ${reRegisterStudent.first_name} ${reRegisterStudent.last_name}` : 'New Registration'
           : activeView === 'DETAIL'
           ? `Registration ${selectedRegistration?.registration_number || ''}`
           : currentRole === 'REGISTRAR'
@@ -87,7 +97,12 @@ export default function RegistrationsPage() {
         <ErrorAlert message={error} onRetry={loadRegistrations} />
       ) : activeView === 'NEW' ? (
         <NewRegistrationWizard
-          onCancel={() => setActiveView('LIST')}
+          initialStudent={reRegisterStudent}
+          defaultRegistrationType={reRegisterStudent ? 'RE_REGISTRATION' : 'INITIAL_REGISTRATION'}
+          onCancel={() => {
+            setReRegisterStudent(null);
+            setActiveView('LIST');
+          }}
           onSuccess={handleNewRegistrationSuccess}
         />
       ) : activeView === 'DETAIL' && selectedRegistration ? (
@@ -99,13 +114,18 @@ export default function RegistrationsPage() {
             setSelectedRegistration(null);
           }}
           onUpdateStatus={handleUpdateStatus}
+          onReRegisterStudent={handleStartReRegistration}
         />
       ) : currentRole === 'REGISTRAR' ? (
         <ManageRegisterView
           registrations={registrations}
           currentRole={currentRole}
           onSelectRegistration={handleSelectRegistration}
-          onNewRegistration={() => setActiveView('NEW')}
+          onNewRegistration={() => {
+            setReRegisterStudent(null);
+            setActiveView('NEW');
+          }}
+          onReRegisterStudent={handleStartReRegistration}
           onReload={loadRegistrations}
         />
       ) : (

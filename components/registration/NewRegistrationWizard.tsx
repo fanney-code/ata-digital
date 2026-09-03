@@ -32,13 +32,17 @@ import {
 interface NewRegistrationWizardProps {
   onCancel: () => void;
   onSuccess: (reg: Registration) => void;
+  initialStudent?: Student | null;
+  defaultRegistrationType?: RegistrationType;
 }
 
 export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   onCancel,
   onSuccess,
+  initialStudent,
+  defaultRegistrationType = 'INITIAL_REGISTRATION',
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(initialStudent ? 2 : 1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -46,7 +50,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Student[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(initialStudent || null);
   const [showCreateStudentForm, setShowCreateStudentForm] = useState(false);
 
   const [newStudentData, setNewStudentData] = useState({
@@ -67,7 +71,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   const [selectedInstitutionId, setSelectedInstitutionId] = useState('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [selectedProgramId, setSelectedProgramId] = useState('');
-  const [registrationType, setRegistrationType] = useState<RegistrationType>('INITIAL_REGISTRATION');
+  const [registrationType, setRegistrationType] = useState<RegistrationType>(defaultRegistrationType);
   const [academicYear, setAcademicYear] = useState('2026-2027');
   const [notes, setNotes] = useState('');
 
