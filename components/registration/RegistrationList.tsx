@@ -8,6 +8,8 @@ interface RegistrationListProps {
   currentRole: UserRole;
   onSelectRegistration: (reg: Registration) => void;
   onNewRegistration: () => void;
+  externalSearchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
 }
 
 export const RegistrationList: React.FC<RegistrationListProps> = ({
@@ -15,9 +17,17 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
   currentRole,
   onSelectRegistration,
   onNewRegistration,
+  externalSearchQuery,
+  onSearchQueryChange,
 }) => {
   const [activeTab, setActiveTab] = useState<WorkflowStatus | 'ALL'>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
+
+  React.useEffect(() => {
+    if (externalSearchQuery !== undefined) {
+      setSearchQuery(externalSearchQuery);
+    }
+  }, [externalSearchQuery]);
 
   const filteredRegistrations = registrations.filter((reg) => {
     // Tab status filter
@@ -75,7 +85,7 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-md shadow-blue-500/20 transition-all transform hover:-translate-y-0.5"
           >
             <Plus className="h-4 w-4" />
-            + NEW REGISTRATION
+            NEW REGISTRATION
           </button>
         )}
       </div>
@@ -89,7 +99,10 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (onSearchQueryChange) onSearchQueryChange(e.target.value);
+              }}
               placeholder="Search Reg #, Student UID, Name..."
               className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />

@@ -101,11 +101,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Primary Action Button - Role Specific */}
-        {currentRole === 'REGISTRAR' && (
+        {(currentRole === 'REGISTRAR' || currentRole === 'UNIVERSAL') && (
           <div className="px-4 pt-3 pb-1.5 shrink-0">
             <button
               onClick={() => {
-                if (onNewRegistration) onNewRegistration();
+                if (onNewRegistration) {
+                  onNewRegistration();
+                }
                 if (onCloseMobile) onCloseMobile();
               }}
               className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-xs transition-all"
@@ -116,11 +118,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        {currentRole === 'ADMINISTRATOR' && onManageRegistrars && (
+        {currentRole === 'ADMINISTRATOR' && (
           <div className="px-4 pt-3 pb-1.5 shrink-0">
             <button
               onClick={() => {
-                onManageRegistrars();
+                if (onManageRegistrars) {
+                  onManageRegistrars();
+                } else {
+                  router.push('/dashboard?action=manage_registrars');
+                }
                 if (onCloseMobile) onCloseMobile();
               }}
               className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-xs transition-all"

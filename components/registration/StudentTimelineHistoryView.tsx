@@ -166,15 +166,17 @@ export const StudentTimelineHistoryView: React.FC<StudentTimelineHistoryViewProp
                       <div>
                         <span className="block text-slate-400 font-medium">Institution & Department</span>
                         <span className="font-semibold text-slate-800">
-                          {reg.institution?.name || 'Institution'}
+                          {reg.institution?.name || 'New India Bible Seminary'}
                         </span>
-                        <div className="text-slate-500 text-[11px]">{reg.department?.name}</div>
+                        <div className="text-slate-500 text-[11px]">
+                          {reg.department?.name || 'Theology'}
+                        </div>
                       </div>
 
                       <div>
                         <span className="block text-slate-400 font-medium">Program Degree</span>
                         <span className="font-semibold text-slate-800">
-                          {reg.program?.name || 'Program'}
+                          {reg.program?.name || 'Bachelor of Theology'}
                         </span>
                         <div className="text-blue-600 font-medium text-[11px]">
                           {reg.registration_type.replace(/_/g, ' ')}

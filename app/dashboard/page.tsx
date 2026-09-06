@@ -83,14 +83,61 @@ export default function DashboardPage() {
     await loadData();
   };
 
+  const filteredRegistrations = React.useMemo(() => {
+    if (!searchQuery.trim()) return registrations;
+    const q = searchQuery.toLowerCase().trim();
+    return registrations.filter((r) => {
+      const stuName = r.student
+        ? `${r.student.first_name} ${r.student.last_name}`.toLowerCase()
+        : '';
+      const uid = (r.student?.permanent_uid || '').toLowerCase();
+      const email = (r.student?.email || '').toLowerCase();
+      const regNum = r.registration_number.toLowerCase();
+      const inst = (r.institution?.name || '').toLowerCase();
+      const prog = (r.program?.name || '').toLowerCase();
+
+      return (
+        stuName.includes(q) ||
+        uid.includes(q) ||
+        email.includes(q) ||
+        regNum.includes(q) ||
+        inst.includes(q) ||
+        prog.includes(q)
+      );
+    });
+  }, [registrations, searchQuery]);
+
+  // Check URL query on mount for direct registration inspection
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('new') === 'true' || params.get('action') === 'new') {
+        setActiveView('NEW');
+      }
+      if (params.get('action') === 'manage_registrars') {
+        setActiveView('MANAGE_REGISTRARS');
+      }
+      const regId = params.get('id') || params.get('reg');
+      if (regId && registrations.length > 0) {
+        const found = registrations.find((r) => r.id === regId || r.registration_number === regId);
+        if (found) {
+          setSelectedRegistration(found);
+          setActiveView('DETAIL');
+        }
+      }
+      const q = params.get('query');
+      if (q) {
+        setSearchQuery(q);
+      }
+    }
+  }, [registrations]);
+
   return (
     <PortalLayout
       currentRole={currentRole}
       onRoleChange={setCurrentRole}
-      onNewRegistration={() => setActiveView('NEW')}
       onManageRegistrars={() => setActiveView('MANAGE_REGISTRARS')}
-      searchQuery={searchQuery}
-      onSearchChange={setSearchQuery}
+      onSelectRegistration={handleSelectRegistration}
       title={
         activeView === 'NEW'
           ? 'New Registration'
@@ -126,7 +173,7 @@ export default function DashboardPage() {
         />
       ) : activeView === 'LIST' ? (
         <RegistrationList
-          registrations={registrations}
+          registrations={filteredRegistrations}
           currentRole={currentRole}
           onSelectRegistration={handleSelectRegistration}
           onNewRegistration={() => setActiveView('NEW')}
@@ -136,7 +183,7 @@ export default function DashboardPage() {
           {currentRole === 'UNIVERSAL' && (
             <UniversalDashboard
               metrics={metrics}
-              registrations={registrations}
+              registrations={filteredRegistrations}
               onSelectRegistration={handleSelectRegistration}
             />
           )}
@@ -144,19 +191,21 @@ export default function DashboardPage() {
           {currentRole === 'ADMINISTRATOR' && (
             <AdministratorDashboard
               metrics={metrics}
-              registrations={registrations}
+              registrations={filteredRegistrations}
               onSelectRegistration={handleSelectRegistration}
               onViewAllRegistrations={() => setActiveView('LIST')}
+              searchQuery={searchQuery}
             />
           )}
 
           {currentRole === 'REGISTRAR' && (
             <RegistrarDashboard
               metrics={metrics}
-              registrations={registrations}
+              registrations={filteredRegistrations}
               onNewRegistration={() => setActiveView('NEW')}
               onSelectRegistration={handleSelectRegistration}
               onViewAllRegistrations={() => setActiveView('LIST')}
+              searchQuery={searchQuery}
             />
           )}
         </>

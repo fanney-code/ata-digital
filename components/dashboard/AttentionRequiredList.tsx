@@ -7,16 +7,21 @@ interface AttentionRequiredListProps {
   registrations: Registration[];
   onSelectRegistration: (reg: Registration) => void;
   onViewAll?: () => void;
+  searchQuery?: string;
 }
 
 export const AttentionRequiredList: React.FC<AttentionRequiredListProps> = ({
   registrations,
   onSelectRegistration,
   onViewAll,
+  searchQuery = '',
 }) => {
-  const pendingRegs = registrations.filter(
-    (r) => r.status === 'SUBMITTED' || r.status === 'UNDER_REVIEW' || r.status === 'RESUBMITTED'
-  );
+  const isSearching = Boolean(searchQuery && searchQuery.trim());
+  const pendingRegs = isSearching
+    ? registrations
+    : registrations.filter(
+        (r) => r.status === 'SUBMITTED' || r.status === 'UNDER_REVIEW' || r.status === 'RESUBMITTED'
+      );
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
@@ -25,7 +30,7 @@ export const AttentionRequiredList: React.FC<AttentionRequiredListProps> = ({
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-500" />
           <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-            Administrative Attention Required
+            {isSearching ? `Search Results (${pendingRegs.length})` : 'Administrative Attention Required'}
           </h3>
         </div>
         {onViewAll && (
@@ -43,10 +48,12 @@ export const AttentionRequiredList: React.FC<AttentionRequiredListProps> = ({
         <div className="p-8 text-center">
           <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500 mb-2" />
           <h4 className="text-xs font-semibold text-slate-800">
-            You're all caught up!
+            {isSearching ? `No registrations matching "${searchQuery}"` : "You're all caught up!"}
           </h4>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            No registrations currently require administrative attention.
+            {isSearching
+              ? 'Try searching with a different candidate name or registration number.'
+              : 'No registrations currently require administrative attention.'}
           </p>
         </div>
       ) : (

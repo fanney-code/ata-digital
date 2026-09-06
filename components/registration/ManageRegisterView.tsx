@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Registration, UserRole } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
 import { ExcelImportModal } from './ExcelImportModal';
 import { EditRegistrationModal } from './EditRegistrationModal';
 import { MobileWebCameraCapture } from './MobileWebCameraCapture';
+import { useIsMobileDevice, isCaptureEligible } from '@/lib/utils/useIsMobileDevice';
 import { deleteRegistration, deleteRegistrationsBulk } from '@/lib/api/supabase-service';
 import {
   FileCheck2,
@@ -34,19 +35,34 @@ interface ManageRegisterViewProps {
   onNewRegistration: () => void;
   onReRegisterStudent?: (student: any) => void;
   onReload?: () => void;
+  externalSearchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
 }
 
 export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
   registrations,
+  currentRole,
   onSelectRegistration,
   onNewRegistration,
   onReRegisterStudent,
   onReload,
+  externalSearchQuery,
+  onSearchQueryChange,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const isMobile = useIsMobileDevice();
+  const canCapture = isCaptureEligible(currentRole, isMobile);
+
+  useEffect(() => {
+    if (externalSearchQuery !== undefined) {
+      setSearchQuery(externalSearchQuery);
+    }
+  }, [externalSearchQuery]);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [cameraTargetReg, setCameraTargetReg] = useState<Registration | null>(null);
+  const activeCameraReg = canCapture ? cameraTargetReg : null;
 
   // Edit Modal State
   const [editingReg, setEditingReg] = useState<Registration | null>(null);
@@ -164,7 +180,7 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
             className="inline-flex items-center gap-1.5 px-4.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs shadow-xs transition-all"
           >
             <Plus className="h-4 w-4" />
-            + Manual Registration
+            Manual Registration
           </button>
         </div>
       </div>
@@ -192,7 +208,10 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (onSearchQueryChange) onSearchQueryChange(e.target.value);
+              }}
               placeholder="Search reg #, student, institution..."
               className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />
@@ -321,18 +340,20 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
 
                   {/* Right: Actions Column (Edit, Delete, View Details) */}
                   <div className="flex items-center justify-end gap-2 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCameraTargetReg(reg);
-                      }}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 text-xs font-semibold shadow-2xs transition-colors"
-                      title="Open live phone camera stream for candidate document capture"
-                    >
-                      <Camera className="h-3.5 w-3.5 text-blue-600" />
-                      <span>Capture</span>
-                    </button>
+                    {canCapture && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraTargetReg(reg);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 text-xs font-semibold shadow-2xs transition-colors"
+                        title="Open live phone camera stream for candidate document capture"
+                      >
+                        <Camera className="h-3.5 w-3.5 text-blue-600" />
+                        <span>Capture</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -500,11 +521,11 @@ export const ManageRegisterView: React.FC<ManageRegisterViewProps> = ({
         </div>
       )}
       {/* Mobile Web Camera Capture Modal */}
-      {cameraTargetReg && (
+      {activeCameraReg && (
         <MobileWebCameraCapture
           onClose={() => setCameraTargetReg(null)}
-          onCapture={(dataUrl) => {
-            alert(`Document image captured successfully for registration ${cameraTargetReg.registration_number}! Record updated.`);
+          onCapture={(_dataUrl) => {
+            alert(`Document image captured successfully for registration ${activeCameraReg.registration_number}! Record updated.`);
             setCameraTargetReg(null);
           }}
         />

@@ -3,6 +3,7 @@ import { Registration, UserRole, WorkflowStatus } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
 import { CorrectionModal } from './CorrectionModal';
 import { MobileWebCameraCapture } from './MobileWebCameraCapture';
+import { useIsMobileDevice, isCaptureEligible } from '@/lib/utils/useIsMobileDevice';
 import {
   ArrowLeft,
   User,
@@ -44,6 +45,11 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
   const [capturedDocs, setCapturedDocs] = useState<string[]>([]);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
+
+  const isMobile = useIsMobileDevice();
+  const isRegistrar = currentRole === 'REGISTRAR';
+  const canCapture = isCaptureEligible(currentRole, isMobile);
+  const isCameraActive = canCapture && isCameraModalOpen;
 
   const student = registration.student;
   const institution = registration.institution;
@@ -298,17 +304,19 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
             </div>
 
             {/* Registrar Actions inside Student Identity Card */}
-            {currentRole === 'REGISTRAR' && (
+            {isRegistrar && (canCapture || (onReRegisterStudent && student)) && (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCameraModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors"
-                  title="Open live phone camera for document capture"
-                >
-                  <Camera className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Capture Doc</span>
-                </button>
+                {canCapture && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCameraModalOpen(true)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors"
+                    title="Open live phone camera for document capture"
+                  >
+                    <Camera className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Capture Doc</span>
+                  </button>
+                )}
 
                 {onReRegisterStudent && student && (
                   <button
@@ -462,7 +470,7 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
       />
 
       {/* Mobile Web Camera Capture Modal */}
-      {isCameraModalOpen && (
+      {isCameraActive && (
         <MobileWebCameraCapture
           onClose={() => setIsCameraModalOpen(false)}
           onCapture={(dataUrl) => {

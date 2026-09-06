@@ -13,6 +13,7 @@ interface AdministratorDashboardProps {
   registrations: Registration[];
   onSelectRegistration: (reg: Registration) => void;
   onViewAllRegistrations?: () => void;
+  searchQuery?: string;
 }
 
 export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
@@ -20,6 +21,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
   registrations,
   onSelectRegistration,
   onViewAllRegistrations,
+  searchQuery,
 }) => {
   const [isRegistrarModalOpen, setIsRegistrarModalOpen] = useState(false);
 
@@ -52,7 +54,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors"
         >
           <UserPlus className="h-4 w-4" />
-          + Define New Registrar
+          Define New Registrar
         </button>
       </div>
 
@@ -88,6 +90,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
             registrations={registrations}
             onSelectRegistration={onSelectRegistration}
             onViewAll={onViewAllRegistrations}
+            searchQuery={searchQuery}
           />
         </div>
 

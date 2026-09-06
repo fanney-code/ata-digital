@@ -14,6 +14,7 @@ interface RegistrarDashboardProps {
   onNewRegistration: () => void;
   onSelectRegistration: (reg: Registration) => void;
   onViewAllRegistrations?: () => void;
+  searchQuery?: string;
 }
 
 export const RegistrarDashboard: React.FC<RegistrarDashboardProps> = ({
@@ -21,6 +22,7 @@ export const RegistrarDashboard: React.FC<RegistrarDashboardProps> = ({
   registrations,
   onSelectRegistration,
   onViewAllRegistrations,
+  searchQuery,
 }) => {
   return (
     <div className="space-y-6">
@@ -60,6 +62,7 @@ export const RegistrarDashboard: React.FC<RegistrarDashboardProps> = ({
         registrations={registrations}
         onSelectRegistration={onSelectRegistration}
         onViewAll={onViewAllRegistrations}
+        searchQuery={searchQuery}
       />
 
       {/* Bottom 2x2 Grid */}

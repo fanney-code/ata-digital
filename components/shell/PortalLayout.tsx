@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { UserRole } from '@/lib/types';
+import { useRouter } from 'next/navigation';
+import { UserRole, Registration } from '@/lib/types';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { NewRegistrationWizard } from '@/components/registration/NewRegistrationWizard';
 
 interface PortalLayoutProps {
   children: React.ReactNode;
@@ -10,8 +12,7 @@ interface PortalLayoutProps {
   onNewRegistration?: () => void;
   onManageRegistrars?: () => void;
   title?: string;
-  searchQuery?: string;
-  onSearchChange?: (q: string) => void;
+  onSelectRegistration?: (reg: any) => void;
 }
 
 export const PortalLayout: React.FC<PortalLayoutProps> = ({
@@ -21,10 +22,28 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({
   onNewRegistration,
   onManageRegistrars,
   title,
-  searchQuery,
-  onSearchChange,
+  onSelectRegistration,
 }) => {
+  const router = useRouter();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isDefaultNewRegModalOpen, setIsDefaultNewRegModalOpen] = useState(false);
+
+  const handleTriggerNewRegistration = () => {
+    if (onNewRegistration) {
+      onNewRegistration();
+    } else {
+      setIsDefaultNewRegModalOpen(true);
+    }
+  };
+
+  const handleModalRegistrationSuccess = (newReg: Registration) => {
+    setIsDefaultNewRegModalOpen(false);
+    if (onSelectRegistration) {
+      onSelectRegistration(newReg);
+    } else {
+      router.push(`/registrations?id=${newReg.id}`);
+    }
+  };
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#f8fafc] flex flex-col lg:flex-row text-slate-900 font-sans antialiased">
@@ -32,7 +51,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({
       <Sidebar
         currentRole={currentRole}
         onRoleChange={onRoleChange}
-        onNewRegistration={onNewRegistration}
+        onNewRegistration={handleTriggerNewRegistration}
         onManageRegistrars={onManageRegistrars}
         isOpenMobile={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
@@ -52,14 +71,25 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({
           currentRole={currentRole}
           title={title}
           onToggleMobileSidebar={() => setMobileSidebarOpen((prev) => !prev)}
-          searchQuery={searchQuery}
-          onSearchChange={onSearchChange}
+          onSelectRegistration={onSelectRegistration}
         />
 
         <main className="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto space-y-6">
           {children}
         </main>
       </div>
+
+      {/* Global New Registration Wizard Modal */}
+      {isDefaultNewRegModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl my-auto max-h-[92vh] overflow-y-auto">
+            <NewRegistrationWizard
+              onCancel={() => setIsDefaultNewRegModalOpen(false)}
+              onSuccess={handleModalRegistrationSuccess}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

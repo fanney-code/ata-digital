@@ -58,6 +58,15 @@ export interface Student {
   date_of_birth?: string;
   gender?: string;
   national_id?: string;
+  aadhar_number?: string; // Application-level alias for national_id
+  state?: string; // Required for all new registrations, nullable for legacy records
+  address?: string;
+  city?: string;
+  district?: string;
+  pincode?: string;
+  country?: string;
+  alternate_phone?: string;
+  alternate_email?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -72,13 +81,23 @@ export interface Registration {
   program_id: string;
   academic_year: string;
   status: WorkflowStatus;
-  notes?: string;
+  notes?: string; // Institution Remarks
   rejection_reason?: string;
   submitted_at?: string;
   reviewed_at?: string;
   created_at?: string;
   updated_at?: string;
-  
+
+  // First-class Academic Background & Qualification Fields
+  highest_qualification?: string;
+  previous_institution?: string;
+  previous_program?: string;
+  year_of_completion?: string;
+  qualification_reg_no?: string;
+
+  // First-class Conditional Previous Registration History
+  previous_registration_number?: string;
+
   // Joined relation fields for ease of UI display
   student?: Student;
   institution?: Institution;

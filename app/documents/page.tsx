@@ -2,15 +2,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserRole } from '@/lib/types';
+import { useAuth } from '@/lib/context/AuthContext';
 import { fetchDocuments, uploadDocumentAttachment } from '@/lib/api/supabase-service';
 import { PortalLayout } from '@/components/shell/PortalLayout';
 import { FolderOpen, FileText, CheckCircle2, Upload, Search, Clock, FileCheck2 } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 export default function DocumentsPage() {
-  const [role, setRole] = useState<UserRole>('REGISTRAR');
+  const { user } = useAuth();
+  const [role, setRole] = useState<UserRole>(user?.role || 'REGISTRAR');
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user?.role) {
+      setRole(user.role);
+    }
+  }, [user]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 

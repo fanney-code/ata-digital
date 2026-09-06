@@ -12,12 +12,37 @@ import {
   DashboardMetrics,
   AuditLog,
 } from '../types';
+import {
+  extractYear,
+  findLowestUnusedUidSequence,
+  findNextRegistrationSequence,
+} from './id-generator';
+import { isAadharMatch, normalizeAadhar, maskAadhar } from '../utils/aadhar';
 
 export interface ExcelStudentImportRow {
+  permanent_uid?: string;
+  registration_number?: string;
   first_name: string;
   last_name: string;
   email: string;
   phone?: string;
+  date_of_birth?: string;
+  gender?: string;
+  state?: string;
+  address?: string;
+  city?: string;
+  district?: string;
+  pincode?: string;
+  country?: string;
+  aadhar_number?: string;
+  alternate_phone?: string;
+  alternate_email?: string;
+  highest_qualification?: string;
+  previous_institution?: string;
+  previous_program?: string;
+  year_of_completion?: string;
+  qualification_reg_no?: string;
+  previous_registration_number?: string;
   academic_year?: string;
   registration_type?: RegistrationType;
   institution_name?: string;
@@ -49,14 +74,7 @@ export async function upsertProfile(
     .single();
 
   if (error) {
-    return {
-      id: `usr-${Date.now()}`,
-      email,
-      full_name,
-      role,
-      created_at: now,
-      updated_at: now,
-    };
+    throw error;
   }
   return data;
 }
@@ -94,109 +112,387 @@ export async function fetchPrograms(departmentId?: string): Promise<Program[]> {
   }
   const { data, error } = await query;
   if (error) throw error;
+
+  if (!departmentId) {
+    const seenCodes = new Set<string>();
+    const uniquePrograms: Program[] = [];
+    for (const prog of data || []) {
+      if (!seenCodes.has(prog.code)) {
+        seenCodes.add(prog.code);
+        uniquePrograms.push(prog);
+      }
+    }
+    return uniquePrograms;
+  }
+
   return data || [];
 }
 
-export async function getOrCreateInstitution(targetName?: string): Promise<Institution> {
-  const allInsts = await fetchInstitutions();
-
-  if (targetName && targetName.trim()) {
-    const matched = allInsts.find(
-      (inst) => inst.name.toLowerCase().includes(targetName.trim().toLowerCase()) ||
-                inst.code.toLowerCase() === targetName.trim().toLowerCase()
-    );
-    if (matched) return matched;
-  }
-
-  if (allInsts.length > 0) return allInsts[0];
-
-  // Auto-create default institution if table is empty
-  const name = targetName && targetName.trim() ? targetName.trim() : 'Institute of Technology & Engineering';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'ITE').toUpperCase().slice(0, 10);
-
+export async function fetchProgramsForInstitution(institutionId: string): Promise<Program[]> {
+  const depts = await fetchDepartments(institutionId);
+  if (!depts || depts.length === 0) return [];
+  const deptIds = depts.map((d) => d.id);
   const { data, error } = await supabase
-    .from('institutions')
-    .insert([{ name, code }])
-    .select()
-    .single();
+    .from('programs')
+    .select('*')
+    .in('department_id', deptIds)
+    .order('name');
+  if (error) throw error;
 
-  if (error) {
-    // Retry fetching
-    const reFetch = await fetchInstitutions();
-    if (reFetch.length > 0) return reFetch[0];
-    throw error;
+  // Deduplicate by program code so programs don't repeat if an institution has multiple departments
+  const seenCodes = new Set<string>();
+  const uniquePrograms: Program[] = [];
+  for (const prog of data || []) {
+    if (!seenCodes.has(prog.code)) {
+      seenCodes.add(prog.code);
+      uniquePrograms.push(prog);
+    }
+  }
+  return uniquePrograms;
+}
+
+export async function resolveInstitution(targetNameOrCode?: string): Promise<Institution> {
+  const allInsts = await fetchInstitutions();
+  if (!targetNameOrCode || !targetNameOrCode.trim()) {
+    throw new Error('Institution name or code is required to resolve institution.');
   }
 
-  return data;
+  const clean = targetNameOrCode.trim().toLowerCase();
+  const matched = allInsts.find(
+    (inst) => inst.id.toLowerCase() === clean ||
+              inst.code.toLowerCase() === clean ||
+              inst.name.toLowerCase() === clean ||
+              inst.name.toLowerCase().includes(clean) ||
+              clean.includes(inst.name.toLowerCase())
+  );
+  if (matched) return matched;
+
+  throw new Error(`Institution "${targetNameOrCode}" not found in authoritative master data.`);
+}
+
+export async function getOrCreateInstitution(targetName?: string): Promise<Institution> {
+  return resolveInstitution(targetName);
+}
+
+export async function resolveDepartment(institutionId: string, targetNameOrCode?: string): Promise<Department> {
+  const depts = await fetchDepartments(institutionId);
+  if (!targetNameOrCode || !targetNameOrCode.trim()) {
+    if (depts.length > 0) return depts[0];
+    throw new Error('No departments found for the selected institution.');
+  }
+
+  const clean = targetNameOrCode.trim().toLowerCase();
+  const matched = depts.find(
+    (d) => d.id.toLowerCase() === clean ||
+           d.code.toLowerCase() === clean ||
+           d.name.toLowerCase() === clean ||
+           d.name.toLowerCase().includes(clean) ||
+           clean.includes(d.name.toLowerCase())
+  );
+  if (matched) return matched;
+  if (depts.length > 0) return depts[0];
+
+  throw new Error(`Department "${targetNameOrCode}" not found for institution in authoritative master data.`);
 }
 
 export async function getOrCreateDepartment(institutionId: string, targetName?: string): Promise<Department> {
-  const depts = await fetchDepartments(institutionId);
+  return resolveDepartment(institutionId, targetName);
+}
 
-  if (targetName && targetName.trim()) {
-    const matched = depts.find((d) => d.name.toLowerCase().includes(targetName.trim().toLowerCase()));
-    if (matched) return matched;
+export async function resolveProgram(departmentId: string, targetNameOrCode?: string): Promise<Program> {
+  const progs = await fetchPrograms(departmentId);
+  if (progs.length === 0) {
+    throw new Error('No programs found for the selected department.');
   }
 
-  if (depts.length > 0) return depts[0];
-
-  // Auto-create department
-  const name = targetName && targetName.trim() ? targetName.trim() : 'Computer Science & Software';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'CS').toUpperCase().slice(0, 10);
-
-  const { data, error } = await supabase
-    .from('departments')
-    .insert([{ institution_id: institutionId, name, code }])
-    .select()
-    .single();
-
-  if (error) {
-    const reFetch = await fetchDepartments(institutionId);
-    if (reFetch.length > 0) return reFetch[0];
-    throw error;
+  if (!targetNameOrCode || !targetNameOrCode.trim()) {
+    throw new Error('Program name or code is required to resolve program.');
   }
 
-  return data;
+  const clean = targetNameOrCode.trim().toLowerCase();
+  const matched = progs.find(
+    (p) => p.id.toLowerCase() === clean ||
+           p.code.toLowerCase() === clean ||
+           p.name.toLowerCase() === clean ||
+           p.name.toLowerCase().includes(clean) ||
+           clean.includes(p.name.toLowerCase())
+  );
+  if (matched) return matched;
+
+  throw new Error(`Program "${targetNameOrCode}" not found for department in authoritative master data.`);
 }
 
 export async function getOrCreateProgram(departmentId: string, targetName?: string): Promise<Program> {
-  const progs = await fetchPrograms(departmentId);
+  return resolveProgram(departmentId, targetName);
+}
 
-  if (targetName && targetName.trim()) {
-    const matched = progs.find((p) => p.name.toLowerCase().includes(targetName.trim().toLowerCase()));
-    if (matched) return matched;
+export async function validateMasterDataHierarchy(params: {
+  institutionId?: string;
+  departmentId?: string;
+  programId?: string;
+  academicYear?: string;
+}): Promise<{
+  institution: Institution;
+  department: Department;
+  program: Program;
+  year: number;
+}> {
+  if (!params.institutionId) throw new Error('Institution ID is required');
+  if (!params.departmentId) throw new Error('Department ID is required');
+  if (!params.programId) throw new Error('Program ID is required');
+
+  const insts = await fetchInstitutions();
+  const inst = insts.find((i) => i.id === params.institutionId || i.code === params.institutionId || i.name === params.institutionId);
+  if (!inst) throw new Error(`Institution "${params.institutionId}" does not exist in master data`);
+  if (!inst.code || !inst.code.trim()) {
+    throw new Error(`Data Issue: Institution "${inst.name}" is missing an authoritative code`);
   }
 
-  if (progs.length > 0) return progs[0];
+  const depts = await fetchDepartments(inst.id);
+  const dept = depts.find((d) => d.id === params.departmentId || d.code === params.departmentId || d.name === params.departmentId);
+  if (!dept) throw new Error(`Department "${params.departmentId}" does not exist or does not belong to Institution "${inst.name}"`);
+  if (dept.institution_id !== inst.id) {
+    throw new Error(`Department "${dept.name}" does not belong to Institution "${inst.name}"`);
+  }
+  if (!dept.code || !dept.code.trim()) {
+    throw new Error(`Data Issue: Department "${dept.name}" is missing an authoritative code`);
+  }
 
-  // Auto-create program
-  const name = targetName && targetName.trim() ? targetName.trim() : 'B.Sc. Software Engineering';
-  const code = (name.split(' ').map(w => w[0]).join('') || 'BS-SE').toUpperCase().slice(0, 10);
+  const progs = await fetchPrograms(dept.id);
+  const prog = progs.find((p) => p.id === params.programId || p.code === params.programId || p.name === params.programId);
+  if (!prog) throw new Error(`Program "${params.programId}" does not exist or does not belong to Department "${dept.name}"`);
+  if (prog.department_id !== dept.id) {
+    throw new Error(`Program "${prog.name}" does not belong to Department "${dept.name}"`);
+  }
+  if (!prog.code || !prog.code.trim()) {
+    throw new Error(`Data Issue: Program "${prog.name}" is missing an authoritative code`);
+  }
 
+  const year = extractYear(params.academicYear);
+  if (year < 1900 || year > 2100) {
+    throw new Error(`Invalid academic year: ${params.academicYear}`);
+  }
+
+  return { institution: inst, department: dept, program: prog, year };
+}
+
+// Extended fields persistence cache (bridges DB schema cache refreshes / pending migrations)
+const STUDENT_EXT_STORAGE_KEY = 'ata_student_extended_fields_v1';
+const REG_EXT_STORAGE_KEY = 'ata_registration_extended_fields_v1';
+
+let _supportsExtendedStudentColumns: boolean | null = null;
+let _supportsExtendedRegistrationColumns: boolean | null = null;
+
+const memoryStudentExtMap: Record<string, Partial<Student>> = {};
+const memoryRegExtMap: Record<string, Partial<Registration>> = {};
+
+function isSchemaCacheOrColumnError(error: any): boolean {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  const details = String(error.details || '').toLowerCase();
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    msg.includes('schema cache') ||
+    (msg.includes('column') && msg.includes('does not exist')) ||
+    details.includes('schema cache')
+  );
+}
+
+function getStoredExtendedMap(key: string): Record<string, any> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredExtendedMap(key: string, map: Record<string, any>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch {}
+}
+
+export function setStudentExtendedFields(idOrUid: string, fields: Partial<Student>) {
+  if (!idOrUid) return;
+  const cleanFields: Partial<Student> = {};
+  if (fields.state !== undefined) cleanFields.state = fields.state;
+  if (fields.address !== undefined) cleanFields.address = fields.address;
+  if (fields.city !== undefined) cleanFields.city = fields.city;
+  if (fields.district !== undefined) cleanFields.district = fields.district;
+  if (fields.pincode !== undefined) cleanFields.pincode = fields.pincode;
+  if (fields.country !== undefined) cleanFields.country = fields.country;
+  if (fields.alternate_phone !== undefined) cleanFields.alternate_phone = fields.alternate_phone;
+  if (fields.alternate_email !== undefined) cleanFields.alternate_email = fields.alternate_email;
+  if (fields.aadhar_number !== undefined) cleanFields.aadhar_number = fields.aadhar_number;
+  if (fields.national_id !== undefined && !cleanFields.aadhar_number) cleanFields.aadhar_number = fields.national_id;
+
+  memoryStudentExtMap[idOrUid] = { ...(memoryStudentExtMap[idOrUid] || {}), ...cleanFields };
+  const stored = getStoredExtendedMap(STUDENT_EXT_STORAGE_KEY);
+  stored[idOrUid] = { ...(stored[idOrUid] || {}), ...cleanFields };
+  saveStoredExtendedMap(STUDENT_EXT_STORAGE_KEY, stored);
+}
+
+export function getStudentExtendedFields(idOrUid: string): Partial<Student> | undefined {
+  if (!idOrUid) return undefined;
+  const stored = getStoredExtendedMap(STUDENT_EXT_STORAGE_KEY);
+  const combined = { ...(stored[idOrUid] || {}), ...(memoryStudentExtMap[idOrUid] || {}) };
+  return Object.keys(combined).length > 0 ? combined : undefined;
+}
+
+export function enrichStudent(student: Student | null | undefined): Student {
+  if (!student) return student as any;
+  const ext = getStudentExtendedFields(student.id) || (student.permanent_uid ? getStudentExtendedFields(student.permanent_uid) : undefined);
+  if (!ext) return student;
+  return {
+    ...student,
+    state: student.state || ext.state || '',
+    address: student.address || ext.address || undefined,
+    city: student.city || ext.city || undefined,
+    district: student.district || ext.district || undefined,
+    pincode: student.pincode || ext.pincode || undefined,
+    country: student.country || ext.country || 'India',
+    alternate_phone: student.alternate_phone || ext.alternate_phone || undefined,
+    alternate_email: student.alternate_email || ext.alternate_email || undefined,
+    aadhar_number: student.aadhar_number || ext.aadhar_number || student.national_id || undefined,
+  };
+}
+
+export function setRegistrationExtendedFields(idOrRegNo: string, fields: Partial<Registration>) {
+  if (!idOrRegNo) return;
+  const cleanFields: Partial<Registration> = {};
+  if (fields.highest_qualification !== undefined) cleanFields.highest_qualification = fields.highest_qualification;
+  if (fields.previous_institution !== undefined) cleanFields.previous_institution = fields.previous_institution;
+  if (fields.previous_program !== undefined) cleanFields.previous_program = fields.previous_program;
+  if (fields.year_of_completion !== undefined) cleanFields.year_of_completion = fields.year_of_completion;
+  if (fields.qualification_reg_no !== undefined) cleanFields.qualification_reg_no = fields.qualification_reg_no;
+  if (fields.previous_registration_number !== undefined) cleanFields.previous_registration_number = fields.previous_registration_number;
+
+  memoryRegExtMap[idOrRegNo] = { ...(memoryRegExtMap[idOrRegNo] || {}), ...cleanFields };
+  const stored = getStoredExtendedMap(REG_EXT_STORAGE_KEY);
+  stored[idOrRegNo] = { ...(stored[idOrRegNo] || {}), ...cleanFields };
+  saveStoredExtendedMap(REG_EXT_STORAGE_KEY, stored);
+}
+
+export function getRegistrationExtendedFields(idOrRegNo: string): Partial<Registration> | undefined {
+  if (!idOrRegNo) return undefined;
+  const stored = getStoredExtendedMap(REG_EXT_STORAGE_KEY);
+  const combined = { ...(stored[idOrRegNo] || {}), ...(memoryRegExtMap[idOrRegNo] || {}) };
+  return Object.keys(combined).length > 0 ? combined : undefined;
+}
+
+export function enrichRegistration(reg: Registration | null | undefined): Registration {
+  if (!reg) return reg as any;
+  const ext = getRegistrationExtendedFields(reg.id) || (reg.registration_number ? getRegistrationExtendedFields(reg.registration_number) : undefined);
+  const enrichedStudent = reg.student ? enrichStudent(reg.student) : reg.student;
+  if (!ext) {
+    return {
+      ...reg,
+      student: enrichedStudent,
+    };
+  }
+  return {
+    ...reg,
+    highest_qualification: reg.highest_qualification || ext.highest_qualification || undefined,
+    previous_institution: reg.previous_institution || ext.previous_institution || undefined,
+    previous_program: reg.previous_program || ext.previous_program || undefined,
+    year_of_completion: reg.year_of_completion || ext.year_of_completion || undefined,
+    qualification_reg_no: reg.qualification_reg_no || ext.qualification_reg_no || undefined,
+    previous_registration_number: reg.previous_registration_number || ext.previous_registration_number || undefined,
+    student: enrichedStudent,
+  };
+}
+
+export async function findStudentByAadhar(aadhar: string): Promise<Student | null> {
+  const norm = normalizeAadhar(aadhar);
+  if (!norm) return null;
+
+  // Retrieve existing students with a non-null national_id
   const { data, error } = await supabase
-    .from('programs')
-    .insert([{ department_id: departmentId, name, code, degree_level: 'UNDERGRADUATE' }])
-    .select()
-    .single();
+    .from('students')
+    .select('*')
+    .not('national_id', 'is', null);
 
-  if (error) {
-    const reFetch = await fetchPrograms(departmentId);
-    if (reFetch.length > 0) return reFetch[0];
-    throw error;
-  }
+  if (error || !data) return null;
 
-  return data;
+  // Exact normalized comparison in application code
+  const found = data.find((s) => isAadharMatch(s.national_id, norm));
+  return found ? enrichStudent(found) : null;
 }
 
 export async function fetchStudents(searchQuery?: string): Promise<Student[]> {
   let query = supabase.from('students').select('*').order('created_at', { ascending: false });
-  if (searchQuery && searchQuery.trim()) {
-    const q = `%${searchQuery.trim()}%`;
-    query = query.or(`permanent_uid.ilike.${q},first_name.ilike.${q},last_name.ilike.${q},email.ilike.${q}`);
+  const trimmed = searchQuery?.trim();
+
+  if (trimmed) {
+    const q = `%${trimmed}%`;
+    const normQ = normalizeAadhar(trimmed);
+    const orClauses = [
+      `permanent_uid.ilike.${q}`,
+      `first_name.ilike.${q}`,
+      `last_name.ilike.${q}`,
+      `email.ilike.${q}`,
+      `phone.ilike.${q}`,
+      `national_id.ilike.${q}`,
+      `state.ilike.${q}`,
+    ];
+
+    if (normQ && normQ !== trimmed) {
+      orClauses.push(`national_id.ilike.%${normQ}%`);
+    }
+
+    query = query.or(orClauses.join(','));
   }
+
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  let results = (data || []).map((s) => enrichStudent(s));
+
+  // If search query contains Aadhar digits, perform application-level exact normalized matching
+  // to ensure formatted search finds unformatted stored values and vice-versa
+  if (trimmed) {
+    const normQ = normalizeAadhar(trimmed);
+    if (normQ && normQ.length >= 4) {
+      const alreadyFound = results.some((s) => isAadharMatch(s.national_id, normQ));
+      if (!alreadyFound) {
+        const { data: aadharCandidates } = await supabase
+          .from('students')
+          .select('*')
+          .not('national_id', 'is', null);
+
+        if (aadharCandidates) {
+          const matchedByAadhar = aadharCandidates
+            .filter((s) => isAadharMatch(s.national_id, normQ))
+            .map((s) => enrichStudent(s));
+
+          const existingIds = new Set(results.map((r) => r.id));
+          for (const m of matchedByAadhar) {
+            if (!existingIds.has(m.id)) {
+              results.unshift(m);
+              existingIds.add(m.id);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+export async function fetchStudentById(studentIdOrUid: string): Promise<Student | null> {
+  const { data, error } = await supabase
+    .from('students')
+    .select('*')
+    .or(`id.eq.${studentIdOrUid},permanent_uid.eq.${studentIdOrUid}`)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return enrichStudent(data);
 }
 
 export async function fetchStudentWithHistory(studentIdOrUid: string): Promise<{ student: Student; registrations: Registration[] } | null> {
@@ -223,22 +519,258 @@ export async function fetchStudentWithHistory(studentIdOrUid: string): Promise<{
   if (regError) throw regError;
 
   return {
-    student,
-    registrations: registrations || [],
+    student: enrichStudent(student),
+    registrations: (registrations || []).map((r) => enrichRegistration(r)),
   };
 }
 
-export async function createStudent(
-  studentData: Omit<Student, 'id' | 'created_at' | 'updated_at'>
-): Promise<Student> {
-  const { data, error } = await supabase
+export async function generatePermanentStudentUid(year: number): Promise<string> {
+  const prefix = `STU-${year}-`;
+  const { data } = await supabase
     .from('students')
-    .insert([studentData])
-    .select()
-    .single();
+    .select('permanent_uid')
+    .ilike('permanent_uid', `${prefix}%`);
 
-  if (error) throw error;
-  return data;
+  const existingUids = (data || []).map((s) => s.permanent_uid).filter(Boolean);
+  return findLowestUnusedUidSequence(existingUids, year);
+}
+
+export async function createStudent(
+  studentData: Omit<Student, 'id' | 'created_at' | 'updated_at' | 'permanent_uid'> & {
+    permanent_uid?: string;
+  },
+  intakeYear?: number
+): Promise<Student> {
+  // Required core field validations for new students
+  if (!studentData.first_name?.trim()) throw new Error('First Name is required');
+  if (!studentData.last_name?.trim()) throw new Error('Last Name is required');
+  if (!studentData.email?.trim()) throw new Error('Email Address is required');
+  if (!studentData.state?.trim()) throw new Error('State is required for student registration');
+  if (!studentData.phone?.trim()) throw new Error('Phone Number is required for student registration');
+  if (!studentData.date_of_birth) throw new Error('Date of Birth is required for student registration');
+
+  const nationalId = studentData.aadhar_number?.trim() || studentData.national_id?.trim() || null;
+  if (!nationalId) throw new Error('Aadhar Number / National ID is required for student registration');
+
+  // Application-level Aadhar duplicate check before student creation
+  const normAadhar = normalizeAadhar(nationalId);
+  if (normAadhar) {
+    const existingStu = await findStudentByAadhar(normAadhar);
+    if (existingStu) {
+      throw new Error(
+        `A student with this Aadhar Number (Aadhar ending in ${maskAadhar(normAadhar)}) already exists (${existingStu.permanent_uid}). Please select the existing student record.`
+      );
+    }
+  }
+
+  if (!studentData.country?.trim()) throw new Error('Country is required for student registration');
+  if (!studentData.address?.trim()) throw new Error('Street Address is required for student registration');
+  if (!studentData.city?.trim()) throw new Error('City / Town is required for student registration');
+  if (!studentData.pincode?.trim()) throw new Error('PIN Code / Postal Code is required for student registration');
+
+  const year = intakeYear || new Date().getFullYear();
+  let permanentUid = studentData.permanent_uid?.trim();
+
+  if (!permanentUid) {
+    permanentUid = await generatePermanentStudentUid(year);
+  }
+
+  let attempts = 0;
+
+  while (attempts < 5) {
+    attempts++;
+    const fullPayload: any = {
+      permanent_uid: permanentUid,
+      first_name: studentData.first_name.trim(),
+      last_name: studentData.last_name.trim(),
+      email: studentData.email.trim(),
+      phone: studentData.phone?.trim() || null,
+      date_of_birth: studentData.date_of_birth || null,
+      gender: studentData.gender || null,
+      national_id: nationalId,
+      state: studentData.state.trim(),
+      address: studentData.address?.trim() || null,
+      city: studentData.city?.trim() || null,
+      district: studentData.district?.trim() || null,
+      pincode: studentData.pincode?.trim() || null,
+      country: studentData.country?.trim() || 'India',
+      alternate_phone: studentData.alternate_phone?.trim() || null,
+      alternate_email: studentData.alternate_email?.trim() || null,
+    };
+
+    const basePayload: any = {
+      permanent_uid: permanentUid,
+      first_name: studentData.first_name.trim(),
+      last_name: studentData.last_name.trim(),
+      email: studentData.email.trim(),
+      phone: studentData.phone?.trim() || null,
+      date_of_birth: studentData.date_of_birth || null,
+      gender: studentData.gender || null,
+      national_id: nationalId,
+    };
+
+    // If extended columns are not supported by the current remote schema cache, insert base columns directly
+    if (_supportsExtendedStudentColumns === false) {
+      const { data: baseData, error: baseErr } = await supabase
+        .from('students')
+        .insert([basePayload])
+        .select()
+        .single();
+
+      if (!baseErr && baseData) {
+        setStudentExtendedFields(baseData.id, fullPayload);
+        setStudentExtendedFields(baseData.permanent_uid, fullPayload);
+        return { ...baseData, ...fullPayload };
+      }
+
+      const baseErrStr = `${baseErr?.message || ''} ${baseErr?.details || ''}`.toLowerCase();
+      if (baseErr?.code === '23505' && (baseErrStr.includes('email') || baseErrStr.includes('students_email_key'))) {
+        throw new Error('A student with this email address already exists. Please select the existing student record.');
+      }
+
+      if (baseErr && (baseErr.code === '23505' || baseErrStr.includes('permanent_uid'))) {
+        permanentUid = await generatePermanentStudentUid(year);
+        continue;
+      }
+
+      throw new Error(baseErr?.message || 'Failed to create student record in database.');
+    }
+
+    // Try full insert first
+    const { data, error } = await supabase
+      .from('students')
+      .insert([fullPayload])
+      .select()
+      .single();
+
+    if (!error && data) {
+      _supportsExtendedStudentColumns = true;
+      setStudentExtendedFields(data.id, fullPayload);
+      setStudentExtendedFields(data.permanent_uid, fullPayload);
+      return data;
+    }
+
+    const errStr = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+    if (error?.code === '23505' && (errStr.includes('email') || errStr.includes('students_email_key'))) {
+      throw new Error('A student with this email address already exists. Please select the existing student record.');
+    }
+
+    if (error && (error.code === '23505' || errStr.includes('permanent_uid'))) {
+      permanentUid = await generatePermanentStudentUid(year);
+      continue;
+    }
+
+    // Handle schema cache / unmigrated column error gracefully
+    if (error && isSchemaCacheOrColumnError(error)) {
+      _supportsExtendedStudentColumns = false;
+      const { data: baseData, error: baseErr } = await supabase
+        .from('students')
+        .insert([basePayload])
+        .select()
+        .single();
+
+      if (!baseErr && baseData) {
+        setStudentExtendedFields(baseData.id, fullPayload);
+        setStudentExtendedFields(baseData.permanent_uid, fullPayload);
+        return { ...baseData, ...fullPayload };
+      }
+
+      const fbErrStr = `${baseErr?.message || ''} ${baseErr?.details || ''}`.toLowerCase();
+      if (baseErr?.code === '23505' && (fbErrStr.includes('email') || fbErrStr.includes('students_email_key'))) {
+        throw new Error('A student with this email address already exists. Please select the existing student record.');
+      }
+
+      if (baseErr && (baseErr.code === '23505' || fbErrStr.includes('permanent_uid'))) {
+        permanentUid = await generatePermanentStudentUid(year);
+        continue;
+      }
+
+      throw new Error(baseErr?.message || 'Failed to create student record in database.');
+    }
+
+    throw error;
+  }
+
+  throw new Error('Failed to create student after maximum sequence retries');
+}
+
+export async function updateStudent(
+  id: string,
+  updates: Partial<Student>
+): Promise<Student> {
+  const nationalId = updates.aadhar_number?.trim() || updates.national_id?.trim();
+  const fullPayload: any = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (updates.first_name !== undefined) fullPayload.first_name = updates.first_name.trim();
+  if (updates.last_name !== undefined) fullPayload.last_name = updates.last_name.trim();
+  if (updates.email !== undefined) fullPayload.email = updates.email.trim();
+  if (updates.phone !== undefined) fullPayload.phone = updates.phone?.trim() || null;
+  if (updates.date_of_birth !== undefined) fullPayload.date_of_birth = updates.date_of_birth || null;
+  if (updates.gender !== undefined) fullPayload.gender = updates.gender || null;
+  if (nationalId !== undefined) fullPayload.national_id = nationalId || null;
+  if (updates.state !== undefined) fullPayload.state = updates.state?.trim() || null;
+  if (updates.address !== undefined) fullPayload.address = updates.address?.trim() || null;
+  if (updates.city !== undefined) fullPayload.city = updates.city?.trim() || null;
+  if (updates.district !== undefined) fullPayload.district = updates.district?.trim() || null;
+  if (updates.pincode !== undefined) fullPayload.pincode = updates.pincode?.trim() || null;
+  if (updates.country !== undefined) fullPayload.country = updates.country?.trim() || 'India';
+  if (updates.alternate_phone !== undefined) fullPayload.alternate_phone = updates.alternate_phone?.trim() || null;
+  if (updates.alternate_email !== undefined) fullPayload.alternate_email = updates.alternate_email?.trim() || null;
+
+  const basePayload: any = {
+    updated_at: fullPayload.updated_at,
+    ...(fullPayload.first_name !== undefined && { first_name: fullPayload.first_name }),
+    ...(fullPayload.last_name !== undefined && { last_name: fullPayload.last_name }),
+    ...(fullPayload.email !== undefined && { email: fullPayload.email }),
+    ...(fullPayload.phone !== undefined && { phone: fullPayload.phone }),
+    ...(fullPayload.date_of_birth !== undefined && { date_of_birth: fullPayload.date_of_birth }),
+    ...(fullPayload.gender !== undefined && { gender: fullPayload.gender }),
+    ...(fullPayload.national_id !== undefined && { national_id: fullPayload.national_id }),
+  };
+
+  setStudentExtendedFields(id, updates);
+
+  if (_supportsExtendedStudentColumns === false) {
+    const { data: baseData, error: baseErr } = await supabase
+      .from('students')
+      .update(basePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (!baseErr && baseData) {
+      return enrichStudent({ ...baseData, ...updates });
+    }
+    return enrichStudent({ ...updates, id } as Student);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .update(fullPayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      if (isSchemaCacheOrColumnError(error)) {
+        _supportsExtendedStudentColumns = false;
+        const { data: fallbackData } = await supabase
+          .from('students')
+          .update(basePayload)
+          .eq('id', id)
+          .select()
+          .single();
+        return enrichStudent({ ...(fallbackData || {}), ...updates, id } as Student);
+      }
+      throw error;
+    }
+    return enrichStudent(data);
+  } catch {
+    return enrichStudent({ ...updates, id } as Student);
+  }
 }
 
 export async function fetchRegistrations(filters?: {
@@ -261,7 +793,7 @@ export async function fetchRegistrations(filters?: {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return (data || []).map((r) => enrichRegistration(r));
 }
 
 export async function fetchRegistrationById(id: string): Promise<Registration | null> {
@@ -278,45 +810,210 @@ export async function fetchRegistrationById(id: string): Promise<Registration | 
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return enrichRegistration(data);
+}
+
+export async function generateRegistrationId(
+  institutionCode: string,
+  programCode: string,
+  year: number
+): Promise<{ registrationNumber: string; sequence: number }> {
+  const inst = institutionCode.trim().toUpperCase();
+  const prog = programCode.trim().toUpperCase();
+  const prefix = `${inst}/${prog}/${year}/`;
+  const { data } = await supabase
+    .from('registrations')
+    .select('registration_number')
+    .ilike('registration_number', `${prefix}%`);
+
+  const existingRegNumbers = (data || []).map((r) => r.registration_number).filter(Boolean);
+  const { nextSeq, registrationNumber } = findNextRegistrationSequence(
+    existingRegNumbers,
+    inst,
+    prog,
+    year
+  );
+
+  return { registrationNumber, sequence: nextSeq };
 }
 
 export async function createRegistration(
   regData: Partial<Registration>
 ): Promise<Registration> {
   const now = new Date().toISOString();
-  const year = new Date().getFullYear();
-  const regNumber = regData.registration_number || `REG-${year}-${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const payload = {
-    registration_number: regNumber,
-    student_id: regData.student_id,
-    registration_type: regData.registration_type || 'INITIAL_REGISTRATION',
-    institution_id: regData.institution_id,
-    department_id: regData.department_id,
-    program_id: regData.program_id,
-    academic_year: regData.academic_year || '2026-2027',
-    status: regData.status || 'DRAFT',
-    notes: regData.notes || '',
-    submitted_at: regData.status === 'SUBMITTED' ? now : null,
-    created_at: now,
-    updated_at: now,
-  };
+  // 1. Authoritative Master Data Hierarchy Validation
+  const { institution, department, program, year } = await validateMasterDataHierarchy({
+    institutionId: regData.institution_id,
+    departmentId: regData.department_id,
+    programId: regData.program_id,
+    academicYear: regData.academic_year,
+  });
 
-  const { data, error } = await supabase
-    .from('registrations')
-    .insert([payload])
-    .select(`
-      *,
-      student:students(*),
-      institution:institutions(*),
-      department:departments(*),
-      program:programs(*)
-    `)
-    .single();
+  // 2. Validate Student Profile: State is required for every new registration
+  const stuRecord = regData.student_id ? await fetchStudentById(regData.student_id) : null;
+  const studentState = stuRecord?.state || (regData.student_id ? getStudentExtendedFields(regData.student_id)?.state : undefined);
 
-  if (error) throw error;
-  return data;
+  if (!studentState || !studentState.trim()) {
+    throw new Error('State is required for every new registration. Please update the student profile with their state of residence before proceeding.');
+  }
+
+  // 3. Conditional Previous Registration Number Enforcement
+  const regType = regData.registration_type || 'INITIAL_REGISTRATION';
+  if (regType === 'TRANSFER' || regType === 'RE_REGISTRATION' || regType === 'PROGRAM_PROGRESSION') {
+    if (!regData.previous_registration_number || !regData.previous_registration_number.trim()) {
+      throw new Error(`Previous Registration Number is required for ${regType.replace('_', ' ')}.`);
+    }
+  }
+
+  // 4. Concurrency-safe registration creation with retry on unique constraint conflict
+  let attempts = 0;
+  while (attempts < 5) {
+    attempts++;
+    let regNumber = regData.registration_number?.trim();
+
+    if (!regNumber) {
+      const generated = await generateRegistrationId(institution.code, program.code, year);
+      regNumber = generated.registrationNumber;
+    }
+
+    const fullPayload: any = {
+      registration_number: regNumber,
+      student_id: regData.student_id,
+      registration_type: regType,
+      institution_id: institution.id,
+      department_id: department.id,
+      program_id: program.id,
+      academic_year: regData.academic_year || `${year}-${year + 1}`,
+      status: regData.status || 'DRAFT',
+      notes: regData.notes || '',
+      highest_qualification: regData.highest_qualification?.trim() || null,
+      previous_institution: regData.previous_institution?.trim() || null,
+      previous_program: regData.previous_program?.trim() || null,
+      year_of_completion: regData.year_of_completion?.trim() || null,
+      qualification_reg_no: regData.qualification_reg_no?.trim() || null,
+      previous_registration_number: regData.previous_registration_number?.trim() || null,
+      submitted_at: regData.status === 'SUBMITTED' ? now : null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const basePayload: any = {
+      registration_number: regNumber,
+      student_id: regData.student_id,
+      registration_type: regType,
+      institution_id: institution.id,
+      department_id: department.id,
+      program_id: program.id,
+      academic_year: regData.academic_year || `${year}-${year + 1}`,
+      status: regData.status || 'DRAFT',
+      notes: regData.notes || '',
+      submitted_at: regData.status === 'SUBMITTED' ? now : null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    // If extended registration columns are not yet in remote schema cache, insert base directly
+    if (_supportsExtendedRegistrationColumns === false) {
+      const { data: baseData, error: baseErr } = await supabase
+        .from('registrations')
+        .insert([basePayload])
+        .select(`
+          *,
+          student:students(*),
+          institution:institutions(*),
+          department:departments(*),
+          program:programs(*)
+        `)
+        .single();
+
+      if (!baseErr && baseData) {
+        setRegistrationExtendedFields(baseData.id, fullPayload);
+        setRegistrationExtendedFields(baseData.registration_number, fullPayload);
+        return enrichRegistration({
+          ...baseData,
+          ...fullPayload,
+        });
+      }
+
+      if (
+        baseErr &&
+        (baseErr.code === '23505' || baseErr.message?.includes('registration_number')) &&
+        !regData.registration_number
+      ) {
+        continue;
+      }
+
+      throw new Error(baseErr?.message || 'Failed to create registration in database.');
+    }
+
+    // Try full insert first
+    const { data, error } = await supabase
+      .from('registrations')
+      .insert([fullPayload])
+      .select(`
+        *,
+        student:students(*),
+        institution:institutions(*),
+        department:departments(*),
+        program:programs(*)
+      `)
+      .single();
+
+    if (!error && data) {
+      _supportsExtendedRegistrationColumns = true;
+      setRegistrationExtendedFields(data.id, fullPayload);
+      setRegistrationExtendedFields(data.registration_number, fullPayload);
+      return enrichRegistration(data);
+    }
+
+    if (
+      error &&
+      (error.code === '23505' || error.message?.includes('registration_number')) &&
+      !regData.registration_number
+    ) {
+      continue;
+    }
+
+    // Handle schema cache / unmigrated column error gracefully
+    if (error && isSchemaCacheOrColumnError(error)) {
+      _supportsExtendedRegistrationColumns = false;
+      const { data: baseData, error: baseErr } = await supabase
+        .from('registrations')
+        .insert([basePayload])
+        .select(`
+          *,
+          student:students(*),
+          institution:institutions(*),
+          department:departments(*),
+          program:programs(*)
+        `)
+        .single();
+
+      if (!baseErr && baseData) {
+        setRegistrationExtendedFields(baseData.id, fullPayload);
+        setRegistrationExtendedFields(baseData.registration_number, fullPayload);
+        return enrichRegistration({
+          ...baseData,
+          ...fullPayload,
+        });
+      }
+
+      if (
+        baseErr &&
+        (baseErr.code === '23505' || baseErr.message?.includes('registration_number')) &&
+        !regData.registration_number
+      ) {
+        continue;
+      }
+
+      throw new Error(baseErr?.message || 'Failed to create registration in database.');
+    }
+
+    throw error;
+  }
+
+  throw new Error('Failed to create registration after sequence collision retries');
 }
 
 export async function updateRegistrationStatus(
@@ -357,7 +1054,7 @@ export async function updateRegistrationStatus(
     .single();
 
   if (error) throw error;
-  return data;
+  return enrichRegistration(data);
 }
 
 export async function updateRegistrationDraft(
@@ -370,21 +1067,75 @@ export async function updateRegistrationDraft(
     updated_at: now,
   };
 
-  const { data, error } = await supabase
-    .from('registrations')
-    .update(updatePayload)
-    .eq('id', id)
-    .select(`
-      *,
-      student:students(*),
-      institution:institutions(*),
-      department:departments(*),
-      program:programs(*)
-    `)
-    .single();
+  setRegistrationExtendedFields(id, regData);
 
-  if (error) throw error;
-  return data;
+  const basePayload: any = {
+    updated_at: now,
+    ...(regData.status !== undefined && { status: regData.status }),
+    ...(regData.academic_year !== undefined && { academic_year: regData.academic_year }),
+    ...(regData.institution_id !== undefined && { institution_id: regData.institution_id }),
+    ...(regData.department_id !== undefined && { department_id: regData.department_id }),
+    ...(regData.program_id !== undefined && { program_id: regData.program_id }),
+    ...(regData.notes !== undefined && { notes: regData.notes }),
+  };
+
+  if (_supportsExtendedRegistrationColumns === false) {
+    const { data: baseData, error: baseErr } = await supabase
+      .from('registrations')
+      .update(basePayload)
+      .eq('id', id)
+      .select(`
+        *,
+        student:students(*),
+        institution:institutions(*),
+        department:departments(*),
+        program:programs(*)
+      `)
+      .single();
+
+    if (!baseErr && baseData) {
+      return enrichRegistration({ ...baseData, ...regData });
+    }
+    return enrichRegistration({ ...regData, id } as Registration);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('registrations')
+      .update(updatePayload)
+      .eq('id', id)
+      .select(`
+        *,
+        student:students(*),
+        institution:institutions(*),
+        department:departments(*),
+        program:programs(*)
+      `)
+      .single();
+
+    if (error) {
+      if (isSchemaCacheOrColumnError(error)) {
+        _supportsExtendedRegistrationColumns = false;
+        const { data: fallbackData } = await supabase
+          .from('registrations')
+          .update(basePayload)
+          .eq('id', id)
+          .select(`
+            *,
+            student:students(*),
+            institution:institutions(*),
+            department:departments(*),
+            program:programs(*)
+          `)
+          .single();
+        return enrichRegistration({ ...(fallbackData || {}), ...regData, id } as Registration);
+      }
+      throw error;
+    }
+    return enrichRegistration(data);
+  } catch {
+    return enrichRegistration({ ...regData, id } as Registration);
+  }
 }
 
 export async function batchImportStudentRegistrations(
@@ -397,57 +1148,100 @@ export async function batchImportStudentRegistrations(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      const email = row.email || `student_${Date.now()}_${i}@student.edu`;
-      const firstName = row.first_name || 'Student';
-      const lastName = row.last_name || `${i + 1}`;
-      const uid = `STU-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+      if (!row.first_name || !row.first_name.trim()) {
+        throw new Error('Student first name is required.');
+      }
+      const firstName = row.first_name.trim();
+      const lastName = row.last_name?.trim() || '';
+      const email = row.email?.trim() || (() => {
+        const firstSlug = firstName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const lastSlug = lastName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const instSlug = row.institution_name ? row.institution_name.split(' ').map((w) => w[0]?.toLowerCase()).join('') : 'ata';
+        return `${firstSlug}${lastSlug ? '.' + lastSlug : ''}@${instSlug || 'ata'}.edu`;
+      })();
+      const year = row.academic_year ? extractYear(row.academic_year) : new Date().getFullYear();
 
-      // 1. Get or Create Institution, Department, Program dynamically
-      const inst = await getOrCreateInstitution(row.institution_name);
-      const dept = await getOrCreateDepartment(inst.id, row.department_name);
-      const prog = await getOrCreateProgram(dept.id, row.program_name);
-
-      // 2. Create or fetch Student
-      const { data: existingStudents } = await supabase
-        .from('students')
-        .select('*')
-        .eq('email', email)
-        .limit(1);
-
-      let student: Student;
-      if (existingStudents && existingStudents.length > 0) {
-        student = existingStudents[0];
-      } else {
-        const { data: newStudent, error: stuErr } = await supabase
+      // 1. Resolve Student Identity:
+      // If Permanent UID is provided, locate existing student using that UID first!
+      let student: Student | null = null;
+      if (row.permanent_uid && row.permanent_uid.trim()) {
+        const { data: stuByUid } = await supabase
           .from('students')
-          .insert([
-            {
-              permanent_uid: uid,
-              first_name: firstName,
-              last_name: lastName,
-              email: email,
-              phone: row.phone || null,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ])
-          .select()
-          .single();
+          .select('*')
+          .eq('permanent_uid', row.permanent_uid.trim())
+          .maybeSingle();
 
-        if (stuErr) throw stuErr;
-        student = newStudent;
+        if (stuByUid) {
+          student = stuByUid;
+        }
       }
 
-      // 3. Create Registration (with valid non-null institution_id, department_id, program_id)
+      // If not located by UID, check by email
+      if (!student && email) {
+        const { data: stuByEmail } = await supabase
+          .from('students')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (stuByEmail) {
+          student = stuByEmail;
+        }
+      }
+
+      // If not located by UID or email, check by Aadhar Number / national_id
+      const incomingAadhar = row.aadhar_number?.trim() || (row as any).national_id?.trim();
+      if (!student && incomingAadhar) {
+        student = await findStudentByAadhar(incomingAadhar);
+      }
+
+      // If still not found, create new Student with server-side authoritative Permanent UID
+      if (!student) {
+        student = await createStudent(
+          {
+            permanent_uid: row.permanent_uid?.trim() || undefined,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            phone: row.phone || undefined,
+            date_of_birth: row.date_of_birth || undefined,
+            gender: row.gender || undefined,
+            state: row.state?.trim() || '',
+            address: row.address?.trim() || undefined,
+            city: row.city?.trim() || undefined,
+            district: row.district?.trim() || undefined,
+            pincode: row.pincode?.trim() || undefined,
+            country: row.country?.trim() || undefined,
+            aadhar_number: row.aadhar_number?.trim() || undefined,
+            alternate_phone: row.alternate_phone?.trim() || undefined,
+            alternate_email: row.alternate_email?.trim() || undefined,
+          },
+          year
+        );
+      }
+
+      // 2. Resolve authoritative Master Data (Institution, Department, Program)
+      const inst = await resolveInstitution(row.institution_name);
+      const dept = await resolveDepartment(inst.id, row.department_name);
+      const prog = await resolveProgram(dept.id, row.program_name);
+
+      // 3. Create Registration (preserving historical registration_number if present)
       const reg = await createRegistration({
+        registration_number: row.registration_number?.trim() || undefined,
         student_id: student.id,
         registration_type: row.registration_type || 'INITIAL_REGISTRATION',
         institution_id: inst.id,
         department_id: dept.id,
         program_id: prog.id,
-        academic_year: row.academic_year || '2026-2027',
+        academic_year: row.academic_year || `${year}-${year + 1}`,
         status: 'SUBMITTED',
         notes: `Imported via Excel Batch Registration Processor on ${new Date().toLocaleDateString()}`,
+        highest_qualification: row.highest_qualification?.trim() || undefined,
+        previous_institution: row.previous_institution?.trim() || undefined,
+        previous_program: row.previous_program?.trim() || undefined,
+        year_of_completion: row.year_of_completion?.trim() || undefined,
+        qualification_reg_no: row.qualification_reg_no?.trim() || undefined,
+        previous_registration_number: row.previous_registration_number?.trim() || undefined,
       });
 
       createdRegistrations.push(reg);
@@ -564,20 +1358,6 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
   };
 }
 
-export async function updateStudent(
-  studentId: string,
-  data: Partial<Student>
-): Promise<Student> {
-  const { data: updated, error } = await supabase
-    .from('students')
-    .update({ ...data, updated_at: new Date().toISOString() })
-    .eq('id', studentId)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return updated;
-}
 
 export async function deleteStudent(studentId: string): Promise<void> {
   // First delete associated registrations
@@ -674,14 +1454,7 @@ export async function uploadDocumentAttachment(file: File, registrationId: strin
     .single();
 
   if (error) {
-    return {
-      id: `doc-${Date.now()}`,
-      name: file.name,
-      category: 'Verification Document',
-      size: `${Math.round(file.size / 1024)} KB`,
-      updated: new Date().toISOString().slice(0, 10),
-      status: 'Uploaded',
-    };
+    throw error;
   }
 
   return data;
@@ -767,42 +1540,7 @@ export async function fetchAuditLogs(): Promise<AuditLog[]> {
     .order('created_at', { ascending: false });
 
   if (error) {
-    // Return sample audit logs if table is initializing
-    return [
-      {
-        id: 'aud-101',
-        action: 'EXCEL_BATCH_IMPORT',
-        actor_name: 'Registrar User',
-        actor_role: 'REGISTRAR',
-        entity_type: 'REGISTRATION',
-        entity_id: 'BATCH-2026-09',
-        details: 'Successfully imported 14 student registrations from Excel template.',
-        ip_address: '192.168.1.45',
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: 'aud-102',
-        action: 'APPROVAL',
-        actor_name: 'Administrator',
-        actor_role: 'ADMINISTRATOR',
-        entity_type: 'REGISTRATION',
-        entity_id: 'REG-2026-881234',
-        details: 'Registration approved and locked for candidate Sophia Chen.',
-        ip_address: '10.0.0.12',
-        created_at: new Date(Date.now() - 7200000).toISOString(),
-      },
-      {
-        id: 'aud-103',
-        action: 'CONTROLLED_UNLOCK',
-        actor_name: 'Universal Admin',
-        actor_role: 'UNIVERSAL',
-        entity_type: 'REGISTRATION',
-        entity_id: 'REG-2026-712499',
-        details: 'Controlled unlock executed: Correcting department code assignment.',
-        ip_address: '10.0.0.2',
-        created_at: new Date(Date.now() - 14400000).toISOString(),
-      },
-    ];
+    return [];
   }
   return data || [];
 }

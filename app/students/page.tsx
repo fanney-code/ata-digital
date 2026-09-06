@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { UserRole, Student } from '@/lib/types';
+import { useAuth } from '@/lib/context/AuthContext';
 import { fetchStudents, deleteStudent, deleteStudentsBulk } from '@/lib/api/supabase-service';
 import { PortalLayout } from '@/components/shell/PortalLayout';
 import { StudentTimelineHistoryView } from '@/components/registration/StudentTimelineHistoryView';
@@ -21,9 +23,17 @@ import {
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 export default function StudentsPage() {
-  const [role, setRole] = useState<UserRole>('REGISTRAR');
+  const router = useRouter();
+  const { user } = useAuth();
+  const [role, setRole] = useState<UserRole>(user?.role || 'REGISTRAR');
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user?.role) {
+      setRole(user.role);
+    }
+  }, [user]);
   const [query, setQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
@@ -47,6 +57,21 @@ export default function StudentsPage() {
   useEffect(() => {
     loadData();
   }, [query]);
+
+  // Check URL params for direct student selection or query
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const studentId = params.get('id');
+      if (studentId) {
+        setSelectedStudentId(studentId);
+      }
+      const q = params.get('query');
+      if (q) {
+        setQuery(q);
+      }
+    }
+  }, []);
 
   const isAllSelected = students.length > 0 && students.every((s) => selectedIds.includes(s.id));
 

@@ -67,7 +67,7 @@ export const ManageRegistrarsView: React.FC = () => {
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs shadow-xs transition-all shrink-0"
           >
             <UserPlus className="h-4 w-4" />
-            + Define New Registrar
+            Define New Registrar
           </button>
         </div>
       </div>
@@ -95,7 +95,7 @@ export const ManageRegistrarsView: React.FC = () => {
             <UserCheck className="mx-auto h-8 w-8 text-slate-300 mb-2" />
             <h4 className="text-xs font-bold text-slate-800">No Registrars Found</h4>
             <p className="text-[11px] text-slate-400 mt-1">
-              Click "+ Define New Registrar" above to create official registrar credentials.
+              Click &ldquo;Define New Registrar&rdquo; above to create official registrar credentials.
             </p>
           </div>
         ) : (

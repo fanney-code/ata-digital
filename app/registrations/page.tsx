@@ -19,9 +19,10 @@ export default function RegistrationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeView, setActiveView] = useState<'LIST' | 'DETAIL' | 'NEW'>('LIST');
+  const [activeView, setActiveView] = useState<'LIST' | 'DETAIL'>('LIST');
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [reRegisterStudent, setReRegisterStudent] = useState<any | null>(null);
+  const [isNewRegistrationModalOpen, setIsNewRegistrationModalOpen] = useState(false);
 
   useEffect(() => {
     if (user?.role) {
@@ -51,9 +52,14 @@ export default function RegistrationsPage() {
     setActiveView('DETAIL');
   };
 
+  const handleOpenNewRegistration = () => {
+    setReRegisterStudent(null);
+    setIsNewRegistrationModalOpen(true);
+  };
+
   const handleStartReRegistration = (student: any) => {
     setReRegisterStudent(student);
-    setActiveView('NEW');
+    setIsNewRegistrationModalOpen(true);
   };
 
   const handleUpdateStatus = async (id: string, status: WorkflowStatus, notes?: string) => {
@@ -67,24 +73,50 @@ export default function RegistrationsPage() {
   };
 
   const handleNewRegistrationSuccess = async (newReg: Registration) => {
+    setIsNewRegistrationModalOpen(false);
     setSelectedRegistration(newReg);
     setReRegisterStudent(null);
     setActiveView('DETAIL');
     await loadRegistrations();
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('new') === 'true' || params.get('action') === 'new') {
+        setReRegisterStudent(null);
+        setIsNewRegistrationModalOpen(true);
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('new');
+        newUrl.searchParams.delete('action');
+        const searchStr = newUrl.searchParams.toString();
+        window.history.replaceState({}, '', newUrl.pathname + (searchStr ? '?' + searchStr : ''));
+      }
+      const regId = params.get('id');
+      if (regId && registrations.length > 0) {
+        const found = registrations.find((r) => r.id === regId || r.registration_number === regId);
+        if (found) {
+          setSelectedRegistration(found);
+          setActiveView('DETAIL');
+        }
+      }
+      const q = params.get('query');
+      if (q) {
+        setSearchQuery(q);
+      }
+    }
+  }, [registrations]);
+
   return (
     <PortalLayout
       currentRole={currentRole}
       onRoleChange={setCurrentRole}
-      onNewRegistration={() => {
-        setReRegisterStudent(null);
-        setActiveView('NEW');
-      }}
+      onSelectRegistration={handleSelectRegistration}
+      onNewRegistration={handleOpenNewRegistration}
       title={
-        activeView === 'NEW'
-          ? reRegisterStudent ? `Re-Registering ${reRegisterStudent.first_name} ${reRegisterStudent.last_name}` : 'New Registration'
-          : activeView === 'DETAIL'
+        activeView === 'DETAIL'
           ? `Registration ${selectedRegistration?.registration_number || ''}`
           : currentRole === 'REGISTRAR'
           ? 'Manage Register'
@@ -95,16 +127,6 @@ export default function RegistrationsPage() {
         <LoadingSkeleton />
       ) : error ? (
         <ErrorAlert message={error} onRetry={loadRegistrations} />
-      ) : activeView === 'NEW' ? (
-        <NewRegistrationWizard
-          initialStudent={reRegisterStudent}
-          defaultRegistrationType={reRegisterStudent ? 'RE_REGISTRATION' : 'INITIAL_REGISTRATION'}
-          onCancel={() => {
-            setReRegisterStudent(null);
-            setActiveView('LIST');
-          }}
-          onSuccess={handleNewRegistrationSuccess}
-        />
       ) : activeView === 'DETAIL' && selectedRegistration ? (
         <RegistrationDetailView
           registration={selectedRegistration}
@@ -121,20 +143,38 @@ export default function RegistrationsPage() {
           registrations={registrations}
           currentRole={currentRole}
           onSelectRegistration={handleSelectRegistration}
-          onNewRegistration={() => {
-            setReRegisterStudent(null);
-            setActiveView('NEW');
-          }}
+          onNewRegistration={handleOpenNewRegistration}
           onReRegisterStudent={handleStartReRegistration}
           onReload={loadRegistrations}
+          externalSearchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
         />
       ) : (
         <RegistrationList
           registrations={registrations}
           currentRole={currentRole}
           onSelectRegistration={handleSelectRegistration}
-          onNewRegistration={() => setActiveView('NEW')}
+          onNewRegistration={handleOpenNewRegistration}
+          externalSearchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
         />
+      )}
+
+      {/* New Registration Wizard Modal */}
+      {isNewRegistrationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl my-auto max-h-[92vh] overflow-y-auto">
+            <NewRegistrationWizard
+              initialStudent={reRegisterStudent}
+              defaultRegistrationType={reRegisterStudent ? 'RE_REGISTRATION' : 'INITIAL_REGISTRATION'}
+              onCancel={() => {
+                setIsNewRegistrationModalOpen(false);
+                setReRegisterStudent(null);
+              }}
+              onSuccess={handleNewRegistrationSuccess}
+            />
+          </div>
+        </div>
       )}
     </PortalLayout>
   );

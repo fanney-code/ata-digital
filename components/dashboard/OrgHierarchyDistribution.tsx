@@ -21,7 +21,7 @@ export const OrgHierarchyDistribution: React.FC<OrgHierarchyDistributionProps> =
   return (
     <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs">
       <h3 className="text-sm font-bold text-slate-900 tracking-tight mb-4">
-        Org Hierarchy Distribution
+        Organization Hierarchy Distribution
       </h3>
 
       <div className="space-y-2.5">
