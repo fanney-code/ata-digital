@@ -63,7 +63,53 @@ import {
   ChevronRight,
   Sparkles,
   Info,
+  BookmarkCheck,
 } from 'lucide-react';
+
+export const COUNTRY_OPTIONS = [
+  'India',
+  'Nepal',
+  'Bhutan',
+  'Sri Lanka',
+  'Bangladesh',
+  'Myanmar',
+  'Philippines',
+  'Singapore',
+  'Malaysia',
+  'United States',
+  'United Kingdom',
+  'Australia',
+  'South Korea',
+  'Germany',
+  'Kenya',
+  'Other',
+];
+
+export const COUNTRY_DIAL_CODES = [
+  { code: '+91', country: 'India' },
+  { code: '+1', country: 'USA/Canada' },
+  { code: '+44', country: 'UK' },
+  { code: '+63', country: 'Philippines' },
+  { code: '+65', country: 'Singapore' },
+  { code: '+61', country: 'Australia' },
+  { code: '+977', country: 'Nepal' },
+  { code: '+975', country: 'Bhutan' },
+  { code: '+94', country: 'Sri Lanka' },
+  { code: '+95', country: 'Myanmar' },
+  { code: '+880', country: 'Bangladesh' },
+  { code: '+82', country: 'South Korea' },
+  { code: '+49', country: 'Germany' },
+  { code: '+254', country: 'Kenya' },
+];
+
+export function formatAadharDigits(val: string): string {
+  const digits = val.replace(/\D/g, '').slice(0, 12);
+  const parts: string[] = [];
+  for (let i = 0; i < digits.length; i += 4) {
+    parts.push(digits.slice(i, i + 4));
+  }
+  return parts.join(' ');
+}
 
 export const INDIAN_STATES = [
   'Andhra Pradesh',
@@ -243,25 +289,133 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [recentStudents, setRecentStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(initialStudent || null);
-  const [showCreateStudentForm, setShowCreateStudentForm] = useState(false);
+  const [showStudentSearchModal, setShowStudentSearchModal] = useState(false);
+
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
+  const [phoneNumberOnly, setPhoneNumberOnly] = useState(
+    initialStudent?.phone
+      ? initialStudent.phone.startsWith('+')
+        ? initialStudent.phone.split(' ').slice(1).join(' ')
+        : initialStudent.phone
+      : ''
+  );
+  const [aadharFormatted, setAadharFormatted] = useState(
+    initialStudent?.aadhar_number ? formatAadharDigits(initialStudent.aadhar_number) : ''
+  );
 
   const [newStudentData, setNewStudentData] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    date_of_birth: '',
-    gender: 'Male',
-    state: '',
-    address: '',
-    city: '',
-    district: '',
-    pincode: '',
-    country: 'India',
-    aadhar_number: '',
-    alternate_phone: '',
-    alternate_email: '',
+    first_name: initialStudent?.first_name || '',
+    last_name: initialStudent?.last_name || '',
+    email: initialStudent?.email || '',
+    phone: initialStudent?.phone || '',
+    date_of_birth: initialStudent?.date_of_birth || '',
+    gender: initialStudent?.gender || 'Male',
+    state: initialStudent?.state || '',
+    address: initialStudent?.address || '',
+    city: initialStudent?.city || '',
+    district: initialStudent?.district || '',
+    pincode: initialStudent?.pincode || '',
+    country: initialStudent?.country || 'India',
+    aadhar_number: initialStudent?.aadhar_number || '',
+    alternate_phone: initialStudent?.alternate_phone || '',
+    alternate_email: initialStudent?.alternate_email || '',
   });
+
+  useEffect(() => {
+    if (initialStudent) {
+      setSelectedStudent(initialStudent);
+      setNewStudentData({
+        first_name: initialStudent.first_name || '',
+        last_name: initialStudent.last_name || '',
+        email: initialStudent.email || '',
+        phone: initialStudent.phone || '',
+        date_of_birth: initialStudent.date_of_birth || '',
+        gender: initialStudent.gender || 'Male',
+        state: initialStudent.state || '',
+        address: initialStudent.address || '',
+        city: initialStudent.city || '',
+        district: initialStudent.district || '',
+        pincode: initialStudent.pincode || '',
+        country: initialStudent.country || 'India',
+        aadhar_number: initialStudent.aadhar_number || '',
+        alternate_phone: initialStudent.alternate_phone || '',
+        alternate_email: initialStudent.alternate_email || '',
+      });
+      if (initialStudent.phone) {
+        const parts = initialStudent.phone.split(' ');
+        if (parts.length > 1 && parts[0].startsWith('+')) {
+          setPhoneCountryCode(parts[0]);
+          setPhoneNumberOnly(parts.slice(1).join(' '));
+        } else {
+          setPhoneNumberOnly(initialStudent.phone);
+        }
+      }
+      if (initialStudent.aadhar_number) {
+        setAadharFormatted(formatAadharDigits(initialStudent.aadhar_number));
+      }
+    }
+  }, [initialStudent]);
+
+  const handleSelectStudent = (st: Student) => {
+    setSelectedStudent(st);
+    setNewStudentData({
+      first_name: st.first_name || '',
+      last_name: st.last_name || '',
+      email: st.email || '',
+      phone: st.phone || '',
+      date_of_birth: st.date_of_birth || '',
+      gender: st.gender || 'Male',
+      state: st.state || '',
+      address: st.address || '',
+      city: st.city || '',
+      district: st.district || '',
+      pincode: st.pincode || '',
+      country: st.country || 'India',
+      aadhar_number: st.aadhar_number || '',
+      alternate_phone: st.alternate_phone || '',
+      alternate_email: st.alternate_email || '',
+    });
+    if (st.phone) {
+      const parts = st.phone.split(' ');
+      if (parts.length > 1 && parts[0].startsWith('+')) {
+        setPhoneCountryCode(parts[0]);
+        setPhoneNumberOnly(parts.slice(1).join(' '));
+      } else {
+        setPhoneNumberOnly(st.phone);
+      }
+    } else {
+      setPhoneNumberOnly('');
+    }
+    if (st.aadhar_number) {
+      setAadharFormatted(formatAadharDigits(st.aadhar_number));
+    } else {
+      setAadharFormatted('');
+    }
+    setShowStudentSearchModal(false);
+  };
+
+  const handleClearSelectedStudent = () => {
+    setSelectedStudent(null);
+    setNewStudentData({
+      first_name: '',
+      last_name: '',
+      email: '',
+      phone: '',
+      date_of_birth: '',
+      gender: 'Male',
+      state: '',
+      address: '',
+      city: '',
+      district: '',
+      pincode: '',
+      country: 'India',
+      aadhar_number: '',
+      alternate_phone: '',
+      alternate_email: '',
+    });
+    setPhoneNumberOnly('');
+    setAadharFormatted('');
+  };
 
   // State update support for existing student missing State
   const [missingStudentState, setMissingStudentState] = useState('');
@@ -355,14 +509,9 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
         setInstitutions(insts);
         setRecentStudents(studentsRes);
 
-        // If no candidate selected yet, check if Joshua Sailo exists or use first student
-        if (!selectedStudent && studentsRes.length > 0) {
-          const sailo = studentsRes.find((s: any) => s.last_name?.toLowerCase().includes('sailo') || s.first_name?.toLowerCase().includes('joshua'));
-          if (sailo) {
-            setSelectedStudent(sailo);
-          } else {
-            setSelectedStudent(studentsRes[0]);
-          }
+        // If initial student provided, retain it
+        if (initialStudent && !selectedStudent) {
+          setSelectedStudent(initialStudent);
         }
 
         if (insts.length > 0) {
@@ -526,67 +675,122 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     }
   };
 
-  // Handle creating a new student
-  const handleCreateStudent = async (e: React.FormEvent) => {
+  // Step 1: Continue to Academic Details
+  const handleContinueToAcademicDetails = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudentData.first_name?.trim() || !newStudentData.last_name?.trim() || !newStudentData.email?.trim()) {
-      setErrorMessage('Please fill in required student fields (First Name, Last Name, Email).');
+    setErrorMessage('');
+
+    if (!newStudentData.first_name?.trim()) {
+      setErrorMessage('First name is required.');
       return;
     }
-    if (!newStudentData.state?.trim()) {
-      setErrorMessage('State is required for every new registration submission.');
+    if (!newStudentData.last_name?.trim()) {
+      setErrorMessage('Last name is required.');
       return;
     }
     if (!newStudentData.date_of_birth) {
-      setErrorMessage('Date of Birth is required for student registration.');
+      setErrorMessage('Date of birth is required.');
       return;
     }
-    if (!newStudentData.phone?.trim()) {
-      setErrorMessage('Phone Number is required for student registration.');
+    if (!newStudentData.gender) {
+      setErrorMessage('Gender is required.');
       return;
     }
-    if (!newStudentData.aadhar_number?.trim()) {
-      setErrorMessage('Aadhar Number / National ID is required for student registration.');
+    if (!newStudentData.state?.trim()) {
+      setErrorMessage('State of residence is required.');
       return;
     }
-    if (!newStudentData.country?.trim()) {
-      setErrorMessage('Country is required for student registration.');
+    if (!newStudentData.email?.trim()) {
+      setErrorMessage('Email address is required.');
+      return;
+    }
+    if (!phoneNumberOnly?.trim()) {
+      setErrorMessage('Phone number is required.');
+      return;
+    }
+    const cleanAadhar = (newStudentData.aadhar_number || aadharFormatted).replace(/\D/g, '');
+    if (!cleanAadhar || cleanAadhar.length !== 12) {
+      setErrorMessage('Aadhar / national ID must be a 12-digit number.');
       return;
     }
     if (!newStudentData.address?.trim()) {
-      setErrorMessage('Street Address is required for student registration.');
+      setErrorMessage('Street address is required.');
       return;
     }
     if (!newStudentData.city?.trim()) {
-      setErrorMessage('City / Town is required for student registration.');
+      setErrorMessage('City / town is required.');
       return;
     }
     if (!newStudentData.pincode?.trim()) {
-      setErrorMessage('PIN Code / Postal Code is required for student registration.');
+      setErrorMessage('PIN code is required.');
+      return;
+    }
+    if (!newStudentData.country?.trim()) {
+      setErrorMessage('Country is required.');
       return;
     }
 
+    const fullPhone = `${phoneCountryCode} ${phoneNumberOnly.trim()}`.trim();
+
+    // If an existing student was selected
+    if (selectedStudent?.id) {
+      setSelectedStudent({
+        ...selectedStudent,
+        first_name: newStudentData.first_name.trim(),
+        last_name: newStudentData.last_name.trim(),
+        email: newStudentData.email.trim(),
+        phone: fullPhone,
+        date_of_birth: newStudentData.date_of_birth,
+        gender: newStudentData.gender,
+        state: newStudentData.state.trim(),
+        address: newStudentData.address.trim(),
+        city: newStudentData.city.trim(),
+        district: newStudentData.district?.trim() || '',
+        pincode: newStudentData.pincode.trim(),
+        country: newStudentData.country.trim(),
+        aadhar_number: cleanAadhar,
+      });
+      setStep(2);
+      return;
+    }
+
+    // New candidate: persist to database through BFF
     setIsSubmitting(true);
-    setErrorMessage('');
     try {
       const intakeYear = extractYear(academicYear);
-      // createStudent goes through BFF — institution is enforced server-side
+      const studentPayload = {
+        first_name: newStudentData.first_name.trim(),
+        last_name: newStudentData.last_name.trim(),
+        email: newStudentData.email.trim(),
+        phone: fullPhone,
+        date_of_birth: newStudentData.date_of_birth,
+        gender: newStudentData.gender,
+        state: newStudentData.state.trim(),
+        address: newStudentData.address.trim(),
+        city: newStudentData.city.trim(),
+        district: newStudentData.district?.trim() || '',
+        pincode: newStudentData.pincode.trim(),
+        country: newStudentData.country.trim(),
+        aadhar_number: cleanAadhar,
+      };
+
       const res = await fetch('/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentData: newStudentData, intakeYear }),
+        body: JSON.stringify({ studentData: studentPayload, intakeYear }),
         credentials: 'include',
       });
+
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to create student');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to create student record.');
       }
+
       const data = await res.json();
       setSelectedStudent(data.student);
-      setShowCreateStudentForm(false);
       setStep(2);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to create student. Email may already exist.');
+      setErrorMessage(err.message || 'Failed to create student. Email or Aadhar may already exist.');
     } finally {
       setIsSubmitting(false);
     }
@@ -734,24 +938,25 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   return (
     <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl p-6 sm:p-8 space-y-6 animate-in fade-in duration-150 w-full max-w-5xl mx-auto">
       {/* 1. Top Sub-header / Breadcrumbs bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 pb-3 border-b border-slate-100">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-500">
           <button
             type="button"
             onClick={onCancel}
             className="font-bold text-slate-700 hover:text-black transition-colors flex items-center gap-1 cursor-pointer"
           >
-            ← Registrar Console
+            ← Registrar console
           </button>
-          <span className="text-slate-300">/</span>
-          <span className="font-semibold text-slate-600">New Registration · REG-2026-SEC</span>
+          <span className="text-slate-300 font-bold">›</span>
+          <span className="font-semibold text-slate-800">New registration</span>
         </div>
 
-        <div className="flex items-center gap-3 font-semibold text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-bold text-[11px]">
-            <Check className="h-3 w-3 stroke-[3]" />
-            Draft saved just now
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-emerald-600 bg-emerald-50/90 px-3 py-1 rounded-full border border-emerald-200/80">
+            <BookmarkCheck className="h-4 w-4 text-emerald-600 stroke-[2.5]" />
+            <span>Draft saved</span>
+          </div>
+
           <button
             type="button"
             onClick={onCancel}
@@ -763,116 +968,106 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
         </div>
       </div>
 
-      {/* 2. Wizard Header & Modern Stepper */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 pb-2">
+      {/* 2. Wizard Header & Single Stepper */}
+      <div className="space-y-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">
-              REGISTRAR WORKFLOW
-            </span>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Student Registration
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+            Student registration
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-            Complete the registration details and submit the record for verification.
+          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+            Complete all fields to generate a permanent student UID.
           </p>
         </div>
 
-        {/* Stepper matching production design */}
-        <div className="flex flex-col sm:items-end gap-1.5 shrink-0">
-          <div className="text-[11px] font-bold text-slate-500">
-            Step {step} of 3
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {/* STEP 01 */}
+        {/* Single Stepper (no duplicate counters) */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap pt-1">
+          {/* STEP 1 */}
+          <button
+            type="button"
+            onClick={() => setStep(1)}
+            className={`inline-flex items-center gap-2 cursor-pointer transition-colors ${
+              step === 1
+                ? 'text-slate-900 font-bold'
+                : step > 1
+                ? 'text-slate-700 font-semibold'
+                : 'text-slate-400 font-medium'
+            }`}
+          >
             <div
-              onClick={() => setStep(1)}
-              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+              className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
                 step === 1
-                  ? 'bg-slate-900 text-white shadow-xs'
+                  ? 'bg-slate-900 text-white'
                   : step > 1
-                  ? 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-900'
-                  : 'bg-slate-100 text-slate-400'
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}
             >
-              {step > 1 ? (
-                <div className="h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                  <Check className="h-3 w-3 stroke-[3]" />
-                </div>
-              ) : (
-                <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                  step === 1 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
-                }`}>
-                  1
-                </div>
-              )}
-              <span className={`text-xs font-bold ${
-                step === 1 ? 'text-white' : step > 1 ? 'text-slate-800' : 'text-slate-500'
-              }`}>
-                01 Student Details
-              </span>
+              {step > 1 ? <Check className="h-3 w-3 stroke-[3]" /> : '1'}
             </div>
+            <span className="text-xs sm:text-sm">Student details</span>
+          </button>
 
-            <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+          <span className="text-slate-300 font-bold text-sm">›</span>
 
-            {/* STEP 02 */}
+          {/* STEP 2 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedStudent) setStep(2);
+            }}
+            disabled={!selectedStudent}
+            className={`inline-flex items-center gap-2 transition-colors ${
+              selectedStudent ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            } ${
+              step === 2
+                ? 'text-slate-900 font-bold'
+                : step > 2
+                ? 'text-slate-700 font-semibold'
+                : 'text-slate-400 font-medium'
+            }`}
+          >
             <div
-              onClick={() => {
-                if (selectedStudent) setStep(2);
-              }}
-              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+              className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
                 step === 2
-                  ? 'bg-slate-900 text-white shadow-xs'
+                  ? 'bg-slate-900 text-white'
                   : step > 2
-                  ? 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-900'
-                  : 'bg-slate-100 text-slate-400'
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}
             >
-              {step > 2 ? (
-                <div className="h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                  <Check className="h-3 w-3 stroke-[3]" />
-                </div>
-              ) : (
-                <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                  step === 2 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
-                }`}>
-                  2
-                </div>
-              )}
-              <span className={`text-xs font-bold ${
-                step === 2 ? 'text-white' : step > 2 ? 'text-slate-800' : 'text-slate-500'
-              }`}>
-                02 Academic Details
-              </span>
+              {step > 2 ? <Check className="h-3 w-3 stroke-[3]" /> : '2'}
             </div>
+            <span className="text-xs sm:text-sm">Academic details</span>
+          </button>
 
-            <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+          <span className="text-slate-300 font-bold text-sm">›</span>
 
-            {/* STEP 03 */}
+          {/* STEP 3 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedStudent) handleProceedToReview();
+            }}
+            disabled={!selectedStudent}
+            className={`inline-flex items-center gap-2 transition-colors ${
+              selectedStudent ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            } ${
+              step === 3
+                ? 'text-slate-900 font-bold'
+                : 'text-slate-400 font-medium'
+            }`}
+          >
             <div
-              onClick={() => {
-                if (selectedStudent) handleProceedToReview();
-              }}
-              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+              className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
                 step === 3
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-400'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}
             >
-              <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                step === 3 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
-              }`}>
-                3
-              </div>
-              <span className={`text-xs font-bold ${
-                step === 3 ? 'text-white' : 'text-slate-500'
-              }`}>
-                03 Review & Submit
-              </span>
+              3
             </div>
-          </div>
+            <span className="text-xs sm:text-sm">Review and submit</span>
+          </button>
         </div>
       </div>
 
@@ -891,321 +1086,368 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* STEP 1: STUDENT INTAKE (SEARCH / SELECT / CREATE)                         */}
+      {/* STEP 1: STUDENT DETAILS                                                   */}
       {/* ========================================================================= */}
       {step === 1 && (
-        <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 shadow-2xs p-6 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">
-                {showCreateStudentForm ? 'Create New Candidate Record' : 'Select Candidate for Matriculation'}
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">
-                {showCreateStudentForm
-                  ? 'All 11 fields are mandatory for generating an authoritative Permanent Student UID.'
-                  : 'Search by Permanent UID, Name, Email, or Aadhar Number, or pick from recent candidates.'}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowCreateStudentForm(!showCreateStudentForm)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-            >
-              {showCreateStudentForm ? (
-                <>
-                  <Search className="h-4 w-4" />
-                  <span>Return to Search</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus className="h-4 w-4" />
-                  <span>+ Create New Candidate</span>
-                </>
+        <form onSubmit={handleContinueToAcademicDetails} className="space-y-6">
+          {/* Candidate Lookup Bar / Notice */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
+            {selectedStudent ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-slate-600 truncate">
+                  Loaded Candidate: <strong className="text-slate-900">{selectedStudent.first_name} {selectedStudent.last_name}</strong> ({selectedStudent.permanent_uid || 'Pre-assigned'})
+                </span>
+              </div>
+            ) : (
+              <span className="text-slate-500 font-medium">
+                Registering a new student candidate.
+              </span>
+            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedStudent && (
+                <button
+                  type="button"
+                  onClick={handleClearSelectedStudent}
+                  className="px-2.5 py-1 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Clear / New
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setShowStudentSearchModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                <Search className="h-3.5 w-3.5 text-slate-400" />
+                <span>Lookup Candidate</span>
+              </button>
+            </div>
           </div>
 
-          {/* CREATE STUDENT FORM */}
-          {showCreateStudentForm ? (
-            <form onSubmit={handleCreateStudent} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Permanent UID (System-Generated)
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    readOnly
-                    value="Auto-assigned (STU-YYYY-XXXXX)"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2.5 font-mono text-xs font-bold text-slate-500 cursor-not-allowed"
-                  />
-                </div>
+          {/* Section 1: Identity */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight pb-2 border-b border-slate-100">
+              Identity
+            </h3>
 
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    State of Residence <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={newStudentData.state}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, state: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  >
-                    <option value="">-- Select State * --</option>
-                    {INDIAN_STATES.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    First Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Candidate legal first name"
-                    value={newStudentData.first_name}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, first_name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Last Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Candidate surname"
-                    value={newStudentData.last_name}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, last_name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Email Address <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="student@example.org"
-                    value={newStudentData.email}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, email: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Phone Number <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+91 98450 12890"
-                    value={newStudentData.phone}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, phone: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Date of Birth <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={newStudentData.date_of_birth}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, date_of_birth: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Gender <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={newStudentData.gender}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, gender: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Aadhar / National ID <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="12-digit Indian Aadhar Number"
-                    value={newStudentData.aadhar_number}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, aadhar_number: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Country <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newStudentData.country}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, country: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Street Address <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Door No, Street Name, Locality"
-                    value={newStudentData.address}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, address: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    City / Town <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Bangalore"
-                    value={newStudentData.city}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, city: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    District
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Bangalore Urban"
-                    value={newStudentData.district}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, district: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    PIN Code <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 560077"
-                    value={newStudentData.pincode}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, pincode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-mono font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-3">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-2.5 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Registering Candidate...' : 'Create & Proceed to Placement →'}
-                </button>
-              </div>
-            </form>
-          ) : (
-            /* SEARCH OR PICK FROM RECENT */
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+            {/* Adjacent First and Last Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  First name <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search candidate by Permanent UID, Name, Email, or Aadhar..."
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-3 text-xs text-slate-900 font-semibold focus:ring-2 focus:ring-black focus:outline-hidden"
+                  required
+                  value={newStudentData.first_name}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, first_name: e.target.value })}
+                  placeholder="Jeo"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
                 />
               </div>
 
-              {/* Search Results or Recent Students */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pt-1">
-                {(searchQuery.trim() ? searchResults : recentStudents).map((st) => {
-                  const isCurSelected = selectedStudent?.id === st.id;
-                  return (
-                    <div
-                      key={st.id}
-                      onClick={() => {
-                        setSelectedStudent(st);
-                        setStep(2);
-                      }}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group ${
-                        isCurSelected
-                          ? 'border-black bg-slate-50 ring-2 ring-black/10'
-                          : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="relative shrink-0">
-                          <div className="h-10 w-10 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
-                            {st.first_name?.[0] || 'S'}{st.last_name?.[0] || 'C'}
-                          </div>
-                          <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
-                            <Check className="h-2 w-2 text-white stroke-[3]" />
-                          </div>
-                        </div>
-
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-black text-slate-900 group-hover:text-black truncate">
-                            {st.first_name} {st.last_name}
-                          </h4>
-                          <p className="text-[11px] font-mono font-bold text-slate-600 truncate mt-0.5">
-                            UID: {st.permanent_uid}
-                          </p>
-                          <p className="text-[11px] text-slate-400 truncate">
-                            {st.email} {st.state ? `• ${st.state}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 rounded-xl bg-black text-white text-[11px] font-bold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        Select Candidate →
-                      </button>
-                    </div>
-                  );
-                })}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Last name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentData.last_name}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, last_name: e.target.value })}
+                  placeholder="Godson"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
               </div>
             </div>
-          )}
-        </div>
+
+            {/* 3-column row: Date of birth, Gender, State of residence */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Date of birth <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newStudentData.date_of_birth}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, date_of_birth: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+                <span className="text-[11px] text-slate-400 font-medium mt-1 block">
+                  Day / month / year
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Gender <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2 pt-0.5">
+                  {['Male', 'Female', 'Other'].map((g) => {
+                    const isSelected = newStudentData.gender === g;
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setNewStudentData({ ...newStudentData, gender: g })}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer text-center ${
+                          isSelected
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  State of residence <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={newStudentData.state}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, state: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                >
+                  <option value="">-- Select State * --</option>
+                  {INDIAN_STATES.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Contact */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight pb-2 border-b border-slate-100">
+              Contact
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Email address <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newStudentData.email}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, email: e.target.value })}
+                  placeholder="godson@student.edu"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Phone number <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex rounded-xl border border-slate-200 bg-white overflow-hidden focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-400 transition-all">
+                  <select
+                    value={phoneCountryCode}
+                    onChange={(e) => setPhoneCountryCode(e.target.value)}
+                    className="bg-slate-50/90 text-slate-800 text-xs font-bold px-3 py-2.5 border-r border-slate-200 focus:outline-none cursor-pointer"
+                  >
+                    {COUNTRY_DIAL_CODES.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.code} ⌄
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="tel"
+                    required
+                    value={phoneNumberOnly}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPhoneNumberOnly(val);
+                      setNewStudentData({
+                        ...newStudentData,
+                        phone: `${phoneCountryCode} ${val}`.trim(),
+                      });
+                    }}
+                    placeholder="98450 12890"
+                    className="flex-1 px-3.5 py-2.5 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none bg-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Identity verification */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight pb-2 border-b border-slate-100">
+              Identity verification
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Aadhar / national ID <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={aadharFormatted}
+                  onChange={(e) => {
+                    const formatted = formatAadharDigits(e.target.value);
+                    const clean = formatted.replace(/\s+/g, '');
+                    setAadharFormatted(formatted);
+                    setNewStudentData({
+                      ...newStudentData,
+                      aadhar_number: clean,
+                    });
+                  }}
+                  placeholder="1234 5678 9012"
+                  maxLength={14}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+                <span className="text-[11px] text-slate-400 font-medium mt-1 block">
+                  12-digit number, grouped for readability
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Permanent UID
+                </label>
+                <div className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 flex items-center justify-between">
+                  <span className="text-xs sm:text-sm font-mono font-bold text-slate-700">
+                    {selectedStudent?.permanent_uid || 'Auto-assigned on save'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-slate-200/80 text-slate-700">
+                    system
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-medium mt-1 block">
+                  STU-2026-XXXXX · generated after submission
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Address */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight pb-2 border-b border-slate-100">
+              Address
+            </h3>
+
+            {/* Street Address (full width) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Street address <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newStudentData.address}
+                onChange={(e) => setNewStudentData({ ...newStudentData, address: e.target.value })}
+                placeholder="12, Gandhi Nagar, MG Road"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+              />
+            </div>
+
+            {/* 3-column row: City/town, District (optional), PIN code */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  City / town <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentData.city}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, city: e.target.value })}
+                  placeholder="Ahmedabad"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <span>District</span>
+                  <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                    optional
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={newStudentData.district}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, district: e.target.value })}
+                  placeholder="Ahmedabad Urban"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  PIN code <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentData.pincode}
+                  onChange={(e) => setNewStudentData({ ...newStudentData, pincode: e.target.value })}
+                  placeholder="380 001"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Country (dropdown) */}
+            <div className="w-full sm:w-1/3">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Country <span className="text-rose-500">*</span>
+              </label>
+              <select
+                required
+                value={newStudentData.country}
+                onChange={(e) => setNewStudentData({ ...newStudentData, country: e.target.value })}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none transition-all"
+              >
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Step 1 Footer Action Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+            >
+              Back
+            </button>
+
+            <div className="flex items-center gap-4 flex-wrap justify-end">
+              <span className="text-xs text-slate-400 font-medium">
+                All required fields marked *
+              </span>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <span>Continue to academic details</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </form>
       )}
 
       {/* ========================================================================= */}
@@ -2194,6 +2436,81 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 className="px-4 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 cursor-pointer"
               >
                 Close Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CANDIDATE SEARCH & SELECT                                          */}
+      {/* ========================================================================= */}
+      {showStudentSearchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h4 className="text-base font-bold text-slate-900">
+                  Lookup Existing Candidate
+                </h4>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Search by UID, Name, Email, or Aadhar to autofill enrollment details.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStudentSearchModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search candidate by Permanent UID, Name, Email, or Aadhar..."
+                className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 font-semibold focus:ring-2 focus:ring-black focus:outline-none"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-2 pt-1">
+              {(searchQuery.trim() ? searchResults : recentStudents).map((st) => (
+                <div
+                  key={st.id}
+                  onClick={() => handleSelectStudent(st)}
+                  className="p-3 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50/70 transition-all cursor-pointer flex items-center justify-between group"
+                >
+                  <div className="min-w-0">
+                    <h5 className="text-xs font-bold text-slate-900 truncate">
+                      {st.first_name} {st.last_name}
+                    </h5>
+                    <p className="text-[11px] font-mono font-semibold text-slate-500">
+                      UID: {st.permanent_uid || 'STU-XXXX'} • {st.email}
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-900 group-hover:underline shrink-0">
+                    Select →
+                  </span>
+                </div>
+              ))}
+              {(searchQuery.trim() ? searchResults : recentStudents).length === 0 && (
+                <div className="text-center py-6 text-xs text-slate-400">
+                  No candidate records found.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowStudentSearchModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
