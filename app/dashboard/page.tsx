@@ -1,13 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { UserRole, DashboardMetrics, Registration, WorkflowStatus } from '@/lib/types';
 import { useAuth } from '@/lib/context/AuthContext';
-import {
-  fetchDashboardMetrics,
-  fetchRegistrations,
-  updateRegistrationStatus,
-} from '@/lib/api/supabase-service';
 import { PortalLayout } from '@/components/shell/PortalLayout';
 import { UniversalDashboard } from '@/components/dashboard/UniversalDashboard';
 import { AdministratorDashboard } from '@/components/dashboard/AdministratorDashboard';
@@ -20,8 +16,9 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
-  const [currentRole, setCurrentRole] = useState<UserRole>(user?.role || 'REGISTRAR');
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const [currentRole, setCurrentRole] = useState<UserRole>('REGISTRAR');
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +29,7 @@ export default function DashboardPage() {
   const [activeView, setActiveView] = useState<'DASHBOARD' | 'DETAIL' | 'NEW' | 'LIST' | 'MANAGE_REGISTRARS'>('DASHBOARD');
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
 
-  // Sync role when user changes
+  // Sync role only from server-verified user
   useEffect(() => {
     if (user?.role) {
       setCurrentRole(user.role);
@@ -40,25 +37,37 @@ export default function DashboardPage() {
   }, [user]);
 
   const loadData = useCallback(async () => {
+    // Guard: never fetch protected data before auth resolves
+    if (authLoading || !user) return;
     setLoading(true);
     setError(null);
     try {
-      const [m, regs] = await Promise.all([
-        fetchDashboardMetrics(),
-        fetchRegistrations(),
-      ]);
-      setMetrics(m);
-      setRegistrations(regs);
+      // All data fetching goes through the BFF — actorContext is built server-side
+      const res = await fetch('/api/dashboard', { credentials: 'include' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to fetch dashboard data');
+      }
+      const data = await res.json();
+      setMetrics(data.metrics);
+      setRegistrations(data.registrations);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch dashboard data');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user, authLoading]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!authLoading) {
+      if (!user) {
+        // Not authenticated — redirect to login
+        router.push('/login');
+        return;
+      }
+      loadData();
+    }
+  }, [authLoading, user, loadData, router]);
 
   // Handle select registration to view detail
   const handleSelectRegistration = (reg: Registration) => {
@@ -66,11 +75,21 @@ export default function DashboardPage() {
     setActiveView('DETAIL');
   };
 
-  // Handle workflow status update (Approve, Request Correction, Submit, Resubmit)
+  // Handle workflow status update — goes through BFF, never direct Supabase
   const handleUpdateStatus = async (id: string, status: WorkflowStatus, notes?: string) => {
     try {
-      const updated = await updateRegistrationStatus(id, status, notes);
-      setSelectedRegistration(updated);
+      const res = await fetch(`/api/registrations/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, notes }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update status');
+      }
+      const data = await res.json();
+      setSelectedRegistration(data.registration);
       await loadData();
     } catch (err: any) {
       alert(`Error updating registration: ${err.message}`);
@@ -132,6 +151,11 @@ export default function DashboardPage() {
     }
   }, [registrations]);
 
+  // Show skeleton during auth resolution OR data loading
+  if (authLoading) {
+    return <LoadingSkeleton />;
+  }
+
   return (
     <PortalLayout
       currentRole={currentRole}
@@ -185,6 +209,8 @@ export default function DashboardPage() {
               metrics={metrics}
               registrations={filteredRegistrations}
               onSelectRegistration={handleSelectRegistration}
+              onNewRegistration={() => setActiveView('NEW')}
+              onManageRegistrars={() => setActiveView('MANAGE_REGISTRARS')}
             />
           )}
 
@@ -193,7 +219,7 @@ export default function DashboardPage() {
               metrics={metrics}
               registrations={filteredRegistrations}
               onSelectRegistration={handleSelectRegistration}
-              onViewAllRegistrations={() => setActiveView('LIST')}
+              onViewAllRegistrations={() => router.push('/registrations')}
               searchQuery={searchQuery}
             />
           )}
@@ -204,7 +230,7 @@ export default function DashboardPage() {
               registrations={filteredRegistrations}
               onNewRegistration={() => setActiveView('NEW')}
               onSelectRegistration={handleSelectRegistration}
-              onViewAllRegistrations={() => setActiveView('LIST')}
+              onViewAllRegistrations={() => router.push('/registrations')}
               searchQuery={searchQuery}
             />
           )}

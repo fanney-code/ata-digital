@@ -23,7 +23,7 @@ const mockRegistration: Registration = {
   program_id: 'prog-001',
   student: {
     id: 'std-test-001',
-    permanent_uid: 'ATA-2026-001',
+    permanent_uid: 'STU-2026-00001',
     first_name: 'Sarah',
     last_name: 'Connor',
     email: 'sarah.connor@example.org',

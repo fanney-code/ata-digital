@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Registration, WorkflowStatus, UserRole } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
-import { Search, Plus, ArrowRight, FileCheck2, Filter } from 'lucide-react';
+import { Search, ArrowRight, FileCheck2, Filter } from 'lucide-react';
 
 interface RegistrationListProps {
   registrations: Registration[];
   currentRole: UserRole;
   onSelectRegistration: (reg: Registration) => void;
-  onNewRegistration: () => void;
+  onNewRegistration?: () => void;
   externalSearchQuery?: string;
   onSearchQueryChange?: (q: string) => void;
 }
@@ -78,16 +78,6 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
             </p>
           </div>
         </div>
-
-        {currentRole === 'REGISTRAR' && (
-          <button
-            onClick={onNewRegistration}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-md shadow-blue-500/20 transition-all transform hover:-translate-y-0.5"
-          >
-            <Plus className="h-4 w-4" />
-            NEW REGISTRATION
-          </button>
-        )}
       </div>
 
       {/* Filter Tabs & Search Bar */}

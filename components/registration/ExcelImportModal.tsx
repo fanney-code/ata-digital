@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import {
-  batchImportStudentRegistrations,
-  fetchStudents,
-  ExcelStudentImportRow,
-} from '@/lib/api/supabase-service';
+import type { ExcelStudentImportRow } from '@/lib/api/supabase-service';
+// Batch import now goes through /api/registrations/batch-import BFF route
+import { useAuth } from '@/lib/context/AuthContext';
 import { isAadharMatch } from '@/lib/utils/aadhar';
 import {
   parseExcelWorkbook,
@@ -38,6 +36,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { user } = useAuth();
+  // NOTE: actorContext is no longer built from user here.
+  // Institution isolation is enforced by the BFF using the server session cookie.
+
   const [file, setFile] = useState<File | null>(null);
   const [workbookResult, setWorkbookResult] = useState<WorkbookParseResult | null>(null);
   const [selectedSheetKey, setSelectedSheetKey] = useState<string>('ALL');
@@ -54,8 +56,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   // Pre-load existing database students for instant duplicate matching
   useEffect(() => {
     if (isOpen) {
-      fetchStudents()
-        .then((stus) => setExistingStudents(stus))
+      // Pre-load students through BFF for duplicate detection (institution-scoped)
+      fetch('/api/students', { credentials: 'include' })
+        .then((r) => r.json())
+        .then((data) => setExistingStudents(data.students || []))
         .catch(() => setExistingStudents([]));
     } else {
       setFile(null);
@@ -220,7 +224,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setStatusMessage(null);
 
     try {
-      const res = await batchImportStudentRegistrations(parsedRows);
+      // Send parsed rows to the BFF — actor is resolved server-side from session cookie.
+      // This ensures institution isolation is enforced on the server, not in the browser.
+      const bffRes = await fetch('/api/registrations/batch-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: parsedRows }),
+        credentials: 'include',
+      });
+      if (!bffRes.ok) {
+        const errData = await bffRes.json();
+        throw new Error(errData.error || 'Batch import failed');
+      }
+      const res = await bffRes.json();
 
       if (res.successCount > 0) {
         setStatusMessage({
@@ -234,7 +250,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       } else {
         setStatusMessage({
           type: 'error',
-          text: `Import failed: ${res.errors.slice(0, 3).join('; ')}`,
+          text: `Import failed: ${(res.errors || []).slice(0, 3).join('; ')}`,
         });
       }
     } catch (err: any) {

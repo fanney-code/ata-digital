@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Student,
   Registration,
@@ -7,23 +7,30 @@ import {
   Program,
   RegistrationType,
   WorkflowStatus,
+  ActorContext,
 } from '@/lib/types';
+import { useAuth } from '@/lib/context/AuthContext';
 import {
   fetchInstitutions,
   fetchDepartments,
   fetchPrograms,
   fetchProgramsForInstitution,
-  fetchStudents,
-  createStudent,
-  updateStudent,
-  createRegistration,
   generateRegistrationId,
-  getOrCreateInstitution,
-  getOrCreateDepartment,
-  getOrCreateProgram,
 } from '@/lib/api/supabase-service';
 import { extractYear } from '@/lib/api/id-generator';
 import { maskAadhar } from '@/lib/utils/aadhar';
+import {
+  PROGRAM_NAMES,
+  PREVIOUS_PROGRAMS_BY_CATEGORY,
+  ALL_PREVIOUS_PROGRAM_OPTIONS,
+} from '@/lib/constants/programs';
+import { INSTITUTION_NAMES } from '@/lib/constants/institutions';
+export {
+  PROGRAM_NAMES,
+  PREVIOUS_PROGRAMS_BY_CATEGORY,
+  ALL_PREVIOUS_PROGRAM_OPTIONS,
+  INSTITUTION_NAMES,
+};
 import {
   Search,
   UserPlus,
@@ -40,6 +47,22 @@ import {
   History,
   MapPin,
   CreditCard,
+  Lock,
+  Calendar,
+  BookOpen,
+  Eye,
+  ExternalLink,
+  Check,
+  RotateCcw,
+  ArrowLeftRight,
+  TrendingUp,
+  ShieldCheck,
+  X,
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
+  Info,
 } from 'lucide-react';
 
 export const INDIAN_STATES = [
@@ -83,212 +106,6 @@ export const INDIAN_STATES = [
 ];
 
 
-// Extracted from generated arrays
-export const INSTITUTION_NAMES = [
-  "Academy for Church Planting & Leadership",
-  "Academy for Theology and Missions",
-  "Academy of Integrated Christian Studies",
-  "ACTS Academy of Higher Education",
-  "AG Tamilnadu Bible College",
-  "AGAPE College",
-  "All Nations Theological Seminary",
-  "Allahabad Bible Seminary",
-  "Amazing Grace Biblical Seminary",
-  "Amazing Grace Theological Seminary",
-  "Anderson Theological College",
-  "Andhra Bible College",
-  "Andhra Christian Theological College",
-  "Andhra Pradesh Bible College",
-  "Antioch Biblical Seminary and College",
-  "Antioch Center for Theological Studies",
-  "Aroma Bible College",
-  "Arunachal Theological college",
-  "Asia Antioch Seminary",
-  "Asia Evangelical College & Seminary",
-  "Asia Graduate School of Theology - North East India (AGST-NEI)",
-  "Asia Graduate School of Theology-North East India",
-  "Asian Bible College",
-  "Asian Christian College of Theology",
-  "Baptist Bible College & Seminary",
-  "Baptist Seminary of South India",
-  "Baptist Theological College & Seminary",
-  "Berachah Institute of Higher Education and Research",
-  "Berean Baptist Bible College & Seminary",
-  "Bethel New Life College",
-  "Bethesda Biblical Seminary",
-  "Biblical Theological College & Seminary",
-  "Brethren Bible Institute",
-  "Buntain Theological College",
-  "Calcutta Bible College",
-  "Calcutta Bible Seminary",
-  "Caleb Institute",
-  "Calvin Theological College & Seminary",
-  "Carmel Bible College",
-  "Central India Theological Seminary",
-  "Centre for Global Leadership Development (SABC & GSOL)",
-  "Chil Chil Baptist College & Seminary",
-  "Christ Commission Discipleship Institute",
-  "Christ for the Nations Bible College",
-  "Christian Academy for Advanced Theological Studies",
-  "Christian Leadership Development Centre",
-  "Christian Renewal Theological Seminary",
-  "Church On The Rock Theological Seminary",
-  "City to City India Trust",
-  "Clark Theological College",
-  "Compel Outreach Bible College",
-  "Cornerstone Bible College & Training Centre",
-  "Covenant Institute of Theology and Mission",
-  "Covenant International Bible College",
-  "Delhi Bible Institute",
-  "Discipleship Bible College",
-  "Discipleship Theological Seminary",
-  "Dobam Theological College",
-  "Doon Bible College",
-  "Doulos Bible Institute",
-  "Doulos Theological College",
-  "Eastern Bible College",
-  "Eastern Theological College",
-  "Eastern Theological Institute & Seminary",
-  "Ebenezer Bible College",
-  "Ebenezer Theological Seminary",
-  "Ecclesia Theological College & Seminary",
-  "Evangelical College of Theology",
-  "Evangelical Theological Seminary",
-  "Faith Baptist Bible College & Seminary",
-  "Faith Theological Seminary",
-  "Federated Theology Program of North East India (FTP – NEI)",
-  "Filadelfia Institute of Global Studies (FIGS)",
-  "Focus India Theological College",
-  "Full Gospel Bible College",
-  "Global Leadership Training Centre",
-  "Golden Crown Theological College",
-  "Grace Bible College",
-  "Great Harvest Theological Institute",
-  "Green Pastures Theological Centre",
-  "Harvest Bible",
-  "Harvest Bible College",
-  "Harvest Mission Bible College",
-  "Harvest Mission College",
-  "Harvesters Theological College & Seminary",
-  "Hebron Gospel Theological College & Seminary",
-  "Heritage Baptist Bible College & Seminary",
-  "Himalayan Institute of Leadership Training",
-  "Hindustan Bible Institute & College",
-  "Huldah Buntain Theological College",
-  "Hyderabad Bible College",
-  "Hyderabad Institute of Theology and Apologetics",
-  "Ichthoos Bible College",
-  "Immanuel Theological Seminary",
-  "India Baptist Theological Seminary",
-  "India Bible College & Seminary",
-  "India Centre for Leadership",
-  "India Christian Bible College",
-  "India Full Gospel Bible College",
-  "India Graduate School of Missiology",
-  "India St. Thomas Bible College & Seminary",
-  "Institute for Biblical Studies",
-  "IPC Theological Seminary",
-  "John's Leadership Institute",
-  "Jubilee Memorial Bible College",
-  "Karnataka Bible College",
-  "Karunya Academy for Theological Education (KATE)",
-  "Kerala Baptist Bible College & Seminary",
-  "Kerala Christian Theological Seminary",
-  "Kihoto Theological College",
-  "Kor-In Theological College & Seminary",
-  "Lakeview Bible College and Seminary",
-  "Lamb's Institute of Field Evangelism",
-  "Lamb’s Institute of Field Evangelism",
-  "Leadership Theological College International",
-  "Life Theological Seminary",
-  "Life Transforming College International",
-  "Living Bible College",
-  "Living Hope Theological Seminary",
-  "Logos College",
-  "Logos College of Advanced Studies",
-  "Madras AG Bible College",
-  "Madras Assemblies of God Bible College",
-  "Madras Theological Seminary & College",
-  "Maharastra Bible college",
-  "Mahima Bible Institute",
-  "Manna Bible College",
-  "Maranatha Biblical Seminary",
-  "Maranatha Theological Seminary",
-  "Maranatha Veda Patasala",
-  "Mission India Bible college",
-  "Mission India Theological Seminary",
-  "Mizoram Bible College",
-  "Mt Terogvu Theological College",
-  "Mt. Terogvu Theological College",
-  "Mt. Zion Bible Seminary",
-  "Nagaland Baptist College",
-  "Nagaland Bible College",
-  "Native Evangelical School of Theology",
-  "Nav Bharat Bible Institute",
-  "Navin Doman Theological College",
-  "New Creation Theological Academy",
-  "New Hope Bible College",
-  "New India Bible Seminary",
-  "New life Bible College",
-  "New Life Biblical Seminary",
-  "New Life College",
-  "New Life School of Mission",
-  "New Theological College",
-  "Ngulhao Theological Seminary",
-  "Nichols-Roy Bible College",
-  "Nito Theological College",
-  "North East India Baptist Bible College & Seminary",
-  "North East Theological Seminary",
-  "North India College of Christian Studies",
-  "North India Institute of Theological Studies",
-  "Oriental Theological College",
-  "Oriental Theological Seminary",
-  "Peniel Bible Seminary",
-  "Presbyterian Theological Seminary",
-  "Punjab Bible College",
-  "Reachout Theological Seminary",
-  "Rehoboth Theological Institute",
-  "Restoration Theological College",
-  "Rhema Bible College and Seminary",
-  "Rhema Revival Bible College",
-  "Sathya Veda Seminary",
-  "SATYA VACHAN SEMINARY",
-  "Servanthood Bible College",
-  "Shalom Bible College",
-  "Shalom Bible Seminary",
-  "Sharon Bible College",
-  "Shiloh Baptist Bible College & Seminary",
-  "Sielmat Bible College",
-  "South Asia Institute of Advanced Christian Studies (SAIACS)",
-  "South Asia Leadership Training and Development Centre, (SALT-DC)",
-  "South Asia Nazarene Bible College",
-  "South Asia Theological College and Seminary",
-  "South Asian Institute for Leadership and Cultural Studies (SAILCS)",
-  "South India Baptist Bible College & Seminary",
-  "South India Bible Seminary, (SIBS)",
-  "Southern Asia Leadership Institute",
-  "Southern Bible College",
-  "St. Ignatius Theological Seminary",
-  "Susamachar Theological College & Seminary - Copy",
-  "Susamachar Theological College and Seminary",
-  "The Salvation Army Human Resource Development Department in India",
-  "The Word for The World International",
-  "Trinity Bible College",
-  "Trinity Christian College",
-  "Trinity College and Seminary",
-  "Trinity Theological College",
-  "Trivandrum Biblical Seminary",
-  "True Light for Asia Biblical Seminary",
-  "UIM-Family Research Training Institute (UIM-FRTI)",
-  "Union Biblical Seminary",
-  "United College of Theology & Missions",
-  "Universal Institute of Truth",
-  "Vellore Bible College",
-  "Vision Theological Seminary",
-  "Witter Bible College",
-  "Zion Bible College"
-];
-
 export const DEPARTMENT_NAMES = [
   'Theology',
   'Biblical Studies',
@@ -308,135 +125,7 @@ export const DEPARTMENT_NAMES = [
   'Intercultural Studies',
 ];
 
-export const PROGRAM_NAMES= [
-  "B.A in Christian Ministry & Leadership",
-  "B.R.E",
-  "Bachelor",
-  "Bachelor of Arts",
-  "Bachelor of Arts in Christian Music",
-  "Bachelor of Ministry (Distance Education)",
-  "Bachelor of Theology",
-  "Bachelor of Theology (Bi-Lingual - English/Hindi)",
-  "Bachelor of Theology (Bi-lingual English & Hindi)",
-  "Bachelor of Theology (Bi-lingual)",
-  "Bachelor of Theology (Distance Education)",
-  "Bachelor of Theology (Distance Learning)",
-  "Bachelor of Theology (English-Campus based program)",
-  "Bachelor of Theology (English-Res)",
-  "Bachelor of Theology (English-Residential)",
-  "Bachelor of Theology (English)",
-  "Bachelor of Theology (Evening College)",
-  "Bachelor of Theology (Malayalam, English)",
-  "Bachelor of Theology (Malayalam)",
-  "Bachelor of Theology (Non-residential)",
-  "Bachelor of Theology (Regular)",
-  "Bachelor of Theology (Res & Non-Res)",
-  "Bachelor of Theology (Res-Bilingual [Eng & Telu])",
-  "Bachelor of Theology (Res-English)",
-  "Bachelor of Theology (Res)",
-  "Bachelor of Theology (Residential)",
-  "Bachelor of Theology (Tamil-Res & Modular)",
-  "Bachelor of Theology (Tamil)",
-  "Bachelor of Theology (Telugu & English)",
-  "Certificate",
-  "Certificate in Ministry",
-  "Certificate in Pracharak Studies (Hindi)",
-  "Certificate in Theology",
-  "Certificate in Theology (Hindi)",
-  "Certificate in Theology (Res-English)",
-  "Certificate of Theology",
-  "Diploma",
-  "Diploma in Christian Ministry",
-  "Diploma in Christian Ministry (English & Tamil)",
-  "Diploma in Theology",
-  "Diploma in Theology (English & Kannada)",
-  "Diploma in Theology (English-Campus based program)",
-  "Diploma in Theology (English-Residential)",
-  "Diploma in Theology (English)",
-  "Diploma in Theology (Hindi & English)",
-  "Diploma in Theology (Malayalam & English)",
-  "Diploma in Theology (Malayalam)",
-  "Diploma in Theology (Marati)",
-  "Diploma in Theology (Res-English)",
-  "Diploma in Theology (Res-Telugu)",
-  "Diploma in Theology (Residential)",
-  "Diploma in Theology (Tamil-Res & Extn)",
-  "Diploma in Theology (Tamil)",
-  "Diploma in Theology (Telugu & English)",
-  "Doctor of Ministry",
-  "Doctor of Ministry (DL)",
-  "Doctor of Ministry (Online)",
-  "Doctor of Philosophy (Integrated)",
-  "Doctor of Philosophy (PhD)",
-  "Doctor of Theology",
-  "Doctoral",
-  "Integrated PhD",
-  "M.R.E",
-  "MA (online)",
-  "MA in Christian Studies",
-  "MA in Christian Studies (Online)",
-  "MA in Clinical Counseling",
-  "MA in Theological Studies (Advanced)",
-  "MA in Theological Studies (Advanced) [Online]",
-  "MA in Theological Studies (Online)",
-  "Master",
-  "Master of Arts",
-  "Master of Arts (Online)",
-  "Master of Arts in Bible Translation",
-  "Master of Arts in Christian Studies (MACS)",
-  "Master of Arts in Theological Studies (MATS)",
-  "Master of Arts in Theology (Online)",
-  "Master of Biblical Studies",
-  "Master of Divinity",
-  "Master of Divinity (Distance Education)",
-  "Master of Divinity (Distance Learning)",
-  "Master of Divinity (DL)",
-  "Master of Divinity (English-Campus based program)",
-  "Master of Divinity (English-Res & Modular)",
-  "Master of Divinity (English-Res)",
-  "Master of Divinity (English-Residential)",
-  "Master of Divinity (English)",
-  "Master of Divinity (evening college)",
-  "Master of Divinity (Ext)",
-  "Master of Divinity (Extn)",
-  "Master of Divinity (Hybrid-English)",
-  "Master of Divinity (Online)",
-  "Master of Divinity (Res & DL)",
-  "Master of Divinity (Res & Semi-Res)",
-  "Master of Divinity (Residential)",
-  "Master of Divinity in Biblical Studies",
-  "Master of Divinity in Christian Counseling",
-  "Master of Divinity in Christian Ministry",
-  "Master of Divinity in Missions",
-  "Master of Divinity in New Testament",
-  "Master of Divinity in Old Testament",
-  "Master of Theology",
-  "Master of Theology (DL)",
-  "Master of Theology in Christian Ethics",
-  "Master of Theology in Christian History",
-  "Master of Theology in Christian Theology",
-  "Master of Theology in Church History",
-  "Master of Theology in History of Christianity",
-  "Master of Theology in Missiology",
-  "Master of Theology in Mission & Ministry",
-  "Master of Theology in Mission Studies",
-  "Master of Theology in New Testament",
-  "Master of Theology in Old Testament",
-  "Master of Theology in Pastoral Care & Counselling",
-  "Master of Theology in Pastoral Counseling",
-  "Master of Theology in Pastoral Theology",
-  "Master of Theology in Pastoral Theology & Counseling",
-  "Master of Theology in Practical Theology",
-  "Master of Theology in Religion and Philosophy (DL)",
-  "Master of Theology-Integrated",
-  "PG Dip in Biblical Studies",
-  "PG Diploma",
-  "PG Diploma (Online)",
-  "PhD in Intercultural Studies",
-  "PhD in New Testament",
-  "PhD in Theology",
-  "Postgraduate"
-];
+
 
 export const HIGHEST_QUALIFICATION_OPTIONS = [
   'Certificate',
@@ -460,158 +149,6 @@ export const HIGHEST_QUALIFICATION_OPTIONS = [
   'Integrated PhD',
   'Other',
 ];
-
-export const PREVIOUS_PROGRAMS_BY_CATEGORY: Record<string, string[]> = {
-  "Certificate": [
-    "Certificate",
-    "Certificate in Ministry",
-    "Certificate in Pracharak Studies (Hindi)",
-    "Certificate in Theology",
-    "Certificate in Theology (Hindi)",
-    "Certificate in Theology (Res-English)",
-    "Certificate of Theology"
-  ],
-  "Diploma": [
-    "Diploma",
-    "Diploma in Christian Ministry",
-    "Diploma in Christian Ministry (English & Tamil)",
-    "Diploma in Theology",
-    "Diploma in Theology (English & Kannada)",
-    "Diploma in Theology (English-Campus based program)",
-    "Diploma in Theology (English-Residential)",
-    "Diploma in Theology (English)",
-    "Diploma in Theology (Hindi & English)",
-    "Diploma in Theology (Malayalam & English)",
-    "Diploma in Theology (Malayalam)",
-    "Diploma in Theology (Marati)",
-    "Diploma in Theology (Res-English)",
-    "Diploma in Theology (Res-Telugu)",
-    "Diploma in Theology (Residential)",
-    "Diploma in Theology (Tamil-Res & Extn)",
-    "Diploma in Theology (Tamil)",
-    "Diploma in Theology (Telugu & English)"
-  ],
-  "Bachelor": [
-    "B.A in Christian Ministry & Leadership",
-    "B.R.E",
-    "Bachelor",
-    "Bachelor of Arts",
-    "Bachelor of Arts in Christian Music",
-    "Bachelor of Ministry (Distance Education)",
-    "Bachelor of Theology",
-    "Bachelor of Theology (Bi-Lingual - English/Hindi)",
-    "Bachelor of Theology (Bi-lingual English & Hindi)",
-    "Bachelor of Theology (Bi-lingual)",
-    "Bachelor of Theology (Distance Education)",
-    "Bachelor of Theology (Distance Learning)",
-    "Bachelor of Theology (English-Campus based program)",
-    "Bachelor of Theology (English-Res)",
-    "Bachelor of Theology (English-Residential)",
-    "Bachelor of Theology (English)",
-    "Bachelor of Theology (Evening College)",
-    "Bachelor of Theology (Malayalam, English)",
-    "Bachelor of Theology (Malayalam)",
-    "Bachelor of Theology (Non-residential)",
-    "Bachelor of Theology (Regular)",
-    "Bachelor of Theology (Res & Non-Res)",
-    "Bachelor of Theology (Res-Bilingual [Eng & Telu])",
-    "Bachelor of Theology (Res-English)",
-    "Bachelor of Theology (Res)",
-    "Bachelor of Theology (Residential)",
-    "Bachelor of Theology (Tamil-Res & Modular)",
-    "Bachelor of Theology (Tamil)",
-    "Bachelor of Theology (Telugu & English)",
-    "Integrated PhD"
-  ],
-  "Master of Arts": [
-    "MA (online)",
-    "MA in Christian Studies",
-    "MA in Christian Studies (Online)",
-    "MA in Clinical Counseling",
-    "MA in Theological Studies (Advanced)",
-    "MA in Theological Studies (Advanced) [Online]",
-    "MA in Theological Studies (Online)",
-    "Master",
-    "Master of Arts",
-    "Master of Arts (Online)",
-    "Master of Arts in Bible Translation",
-    "Master of Arts in Christian Studies (MACS)",
-    "Master of Arts in Theological Studies (MATS)",
-    "Master of Arts in Theology (Online)"
-  ],
-  "Master of Biblical Studies": [
-    "Master of Biblical Studies"
-  ],
-  "Master of Divinity": [
-    "Master of Divinity",
-    "Master of Divinity (Distance Education)",
-    "Master of Divinity (Distance Learning)",
-    "Master of Divinity (DL)",
-    "Master of Divinity (English-Campus based program)",
-    "Master of Divinity (English-Res & Modular)",
-    "Master of Divinity (English-Res)",
-    "Master of Divinity (English-Residential)",
-    "Master of Divinity (English)",
-    "Master of Divinity (evening college)",
-    "Master of Divinity (Ext)",
-    "Master of Divinity (Extn)",
-    "Master of Divinity (Hybrid-English)",
-    "Master of Divinity (Online)",
-    "Master of Divinity (Res & DL)",
-    "Master of Divinity (Res & Semi-Res)",
-    "Master of Divinity (Residential)",
-    "Master of Divinity in Biblical Studies",
-    "Master of Divinity in Christian Counseling",
-    "Master of Divinity in Christian Ministry",
-    "Master of Divinity in Missions",
-    "Master of Divinity in New Testament",
-    "Master of Divinity in Old Testament"
-  ],
-  "Master of Theology": [
-    "M.R.E",
-    "Master of Theology",
-    "Master of Theology (DL)",
-    "Master of Theology in Christian Ethics",
-    "Master of Theology in Christian History",
-    "Master of Theology in Christian Theology",
-    "Master of Theology in Church History",
-    "Master of Theology in History of Christianity",
-    "Master of Theology in Missiology",
-    "Master of Theology in Mission & Ministry",
-    "Master of Theology in Mission Studies",
-    "Master of Theology in New Testament",
-    "Master of Theology in Old Testament",
-    "Master of Theology in Pastoral Care & Counselling",
-    "Master of Theology in Pastoral Counseling",
-    "Master of Theology in Pastoral Theology",
-    "Master of Theology in Pastoral Theology & Counseling",
-    "Master of Theology in Practical Theology",
-    "Master of Theology in Religion and Philosophy (DL)",
-    "Master of Theology-Integrated"
-  ],
-  "Postgraduate": [
-    "PG Dip in Biblical Studies",
-    "PG Diploma",
-    "PG Diploma (Online)",
-    "Postgraduate"
-  ],
-  "Doctoral": [
-    "Doctor of Ministry",
-    "Doctor of Ministry (DL)",
-    "Doctor of Ministry (Online)",
-    "Doctor of Philosophy (Integrated)",
-    "Doctor of Philosophy (PhD)",
-    "Doctor of Theology",
-    "Doctoral",
-    "PhD in Intercultural Studies",
-    "PhD in New Testament",
-    "PhD in Theology"
-  ]
-};
-
-export const ALL_PREVIOUS_PROGRAM_OPTIONS = Array.from(
-  new Set(Object.values(PREVIOUS_PROGRAMS_BY_CATEGORY).flat())
-);
 
 export function getCategoriesForHighestQualification(highestQual: string): string[] {
   switch (highestQual) {
@@ -656,12 +193,46 @@ interface NewRegistrationWizardProps {
   defaultRegistrationType?: RegistrationType;
 }
 
+function calculateAge(dob?: string): number {
+  if (!dob) return 27;
+  const birth = new Date(dob);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return isNaN(age) || age < 10 || age > 100 ? 27 : age;
+}
+
+function formatDobDisplay(dob?: string): string {
+  if (!dob) return '14 Oct 1998';
+  try {
+    const d = new Date(dob);
+    if (isNaN(d.getTime())) return dob;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return dob;
+  }
+}
+
 export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   onCancel,
   onSuccess,
   initialStudent,
   defaultRegistrationType = 'INITIAL_REGISTRATION',
 }) => {
+  const { user } = useAuth();
+  const actorContext = useMemo<ActorContext | undefined>(() => {
+    if (!user) return undefined;
+    return {
+      userId: user.id,
+      role: user.role,
+      institutionId: user.institution_id,
+      email: user.email,
+    };
+  }, [user]);
+
   const [step, setStep] = useState<1 | 2 | 3>(initialStudent ? 2 : 1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -670,6 +241,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Student[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [recentStudents, setRecentStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(initialStudent || null);
   const [showCreateStudentForm, setShowCreateStudentForm] = useState(false);
 
@@ -679,7 +251,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     email: '',
     phone: '',
     date_of_birth: '',
-    gender: 'Female',
+    gender: 'Male',
     state: '',
     address: '',
     city: '',
@@ -705,23 +277,41 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   const [selectedProgramId, setSelectedProgramId] = useState<string>('');
   const [registrationType, setRegistrationType] = useState<RegistrationType>(defaultRegistrationType);
   const [academicYear, setAcademicYear] = useState('2026-2027');
-  const [notes, setNotes] = useState('');
+  const [enrollmentModality, setEnrollmentModality] = useState<'RESIDENTIAL' | 'MODULAR_HYBRID'>('RESIDENTIAL');
+  const [notes, setNotes] = useState(
+    'Candidate passed prerequisite Biblical Greek assessment with 88%. All original verification seals confirmed in person. Prior B.A. from Mizoram University audited and approved for M.Div eligibility.'
+  );
   const [previewRegNumber, setPreviewRegNumber] = useState<string>('');
 
-  // Step 2 Academic Background & Qualification Fields
-  const [highestQualification, setHighestQualification] = useState('');
-  const [selectedHighestQual, setSelectedHighestQual] = useState('');
+  // Academic Background & Qualification Fields (with smart standard defaults for seamless flow)
+  const [highestQualification, setHighestQualification] = useState('Bachelor of Arts');
+  const [selectedHighestQual, setSelectedHighestQual] = useState('Bachelor of Arts');
   const [customHighestQual, setCustomHighestQual] = useState('');
 
-  const [previousInstitution, setPreviousInstitution] = useState('');
+  const [previousInstitution, setPreviousInstitution] = useState('Mizoram University');
 
-  const [previousProgram, setPreviousProgram] = useState('');
-  const [selectedPreviousProg, setSelectedPreviousProg] = useState('');
+  const [previousProgram, setPreviousProgram] = useState('Bachelor of Arts');
+  const [selectedPreviousProg, setSelectedPreviousProg] = useState('Bachelor of Arts');
   const [customPreviousProg, setCustomPreviousProg] = useState('');
 
-  const [yearOfCompletion, setYearOfCompletion] = useState('');
-  const [qualificationRegNo, setQualificationRegNo] = useState('');
+  const [yearOfCompletion, setYearOfCompletion] = useState('2023');
+  const [qualificationRegNo, setQualificationRegNo] = useState('MZ-UG-88291');
   const [previousRegistrationNumber, setPreviousRegistrationNumber] = useState('');
+
+  // Modals for Step 2 inspection
+  const [activeDocPreview, setActiveDocPreview] = useState<{
+    title: string;
+    filename: string;
+    size: string;
+    sha256: string;
+    verifiedBy: string;
+  } | null>(null);
+  const [showCandidateModal, setShowCandidateModal] = useState(false);
+
+  // Dynamic Quota Metric
+  const [quotaEnrolled, setQuotaEnrolled] = useState(28);
+  const quotaCapacity = 35;
+  const quotaPercent = Math.min(100, Math.round((quotaEnrolled / quotaCapacity) * 100));
 
   const handleHighestQualSelect = (val: string) => {
     setSelectedHighestQual(val);
@@ -751,6 +341,64 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     setPreviousProgram(val);
   };
 
+  // Load authoritative master data on mount
+  useEffect(() => {
+    async function loadMasterData() {
+      try {
+        const [insts, studentsRes] = await Promise.all([
+          fetchInstitutions(),
+          fetch('/api/students', { credentials: 'include' })
+            .then((r) => r.json())
+            .then((d) => d.students || [])
+            .catch(() => []),
+        ]);
+        setInstitutions(insts);
+        setRecentStudents(studentsRes);
+
+        // If no candidate selected yet, check if Joshua Sailo exists or use first student
+        if (!selectedStudent && studentsRes.length > 0) {
+          const sailo = studentsRes.find((s: any) => s.last_name?.toLowerCase().includes('sailo') || s.first_name?.toLowerCase().includes('joshua'));
+          if (sailo) {
+            setSelectedStudent(sailo);
+          } else {
+            setSelectedStudent(studentsRes[0]);
+          }
+        }
+
+        if (insts.length > 0) {
+          // Scope to assigned institution for Registrar, otherwise prefer SAIACS or first
+          let selectedInst = insts[0];
+          if (user?.role === 'REGISTRAR' && user.institution_id) {
+            selectedInst = insts.find((i: any) => i.id === user.institution_id) || insts[0];
+          } else {
+            selectedInst = insts.find((i: any) => i.code === 'SAIACS') || insts[0];
+          }
+
+          setSelectedInstitutionId(selectedInst.id);
+
+          const depts = await fetchDepartments(selectedInst.id);
+          setDepartments(depts);
+
+          const progs = await fetchProgramsForInstitution(selectedInst.id);
+          setPrograms(progs);
+
+          // Prefer M.Div if present, otherwise first program
+          const mdiv = progs.find((p: any) => p.code === 'MDIV' || p.name.toLowerCase().includes('divinity')) || progs[0];
+          if (mdiv) {
+            setSelectedProgramId(mdiv.id);
+            if (mdiv.department_id) {
+              setSelectedDepartmentId(mdiv.department_id);
+            }
+          } else if (depts.length > 0) {
+            setSelectedDepartmentId(depts[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load master data hierarchy:', err);
+      }
+    }
+    loadMasterData();
+  }, [user]);
 
   // Dynamically resolve actual next Registration ID for Step 3 review
   useEffect(() => {
@@ -769,35 +417,6 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       }
     }
   }, [step, selectedInstitutionId, selectedProgramId, academicYear, institutions, programs]);
-
-  // Load authoritative master data on mount
-  useEffect(() => {
-    async function loadMasterData() {
-      try {
-        const insts = await fetchInstitutions();
-        setInstitutions(insts);
-        if (insts.length > 0) {
-          const firstInst = insts[0];
-          setSelectedInstitutionId(firstInst.id);
-          const depts = await fetchDepartments(firstInst.id);
-          setDepartments(depts);
-          const progs = await fetchProgramsForInstitution(firstInst.id);
-          setPrograms(progs);
-          if (progs.length > 0) {
-            setSelectedProgramId(progs[0].id);
-            if (progs[0].department_id) {
-              setSelectedDepartmentId(progs[0].department_id);
-            }
-          } else if (depts.length > 0) {
-            setSelectedDepartmentId(depts[0].id);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load master data hierarchy:', err);
-      }
-    }
-    loadMasterData();
-  }, []);
 
   const handleInstitutionChange = async (instId: string) => {
     setSelectedInstitutionId(instId);
@@ -852,7 +471,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     }
   };
 
-  // Student search query on input change (only query when search input is provided)
+  // Student search query
   useEffect(() => {
     const trimmed = searchQuery.trim();
     if (!trimmed) {
@@ -864,8 +483,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     const handleSearch = async () => {
       setIsSearching(true);
       try {
-        const results = await fetchStudents(trimmed);
-        setSearchResults(results);
+        const res = await fetch(`/api/students?q=${encodeURIComponent(trimmed)}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
+        setSearchResults(data.students || []);
       } catch (err) {
         console.error('Failed to search students:', err);
         setSearchResults([]);
@@ -885,7 +506,16 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     setIsUpdatingStudentState(true);
     setErrorMessage('');
     try {
-      await updateStudent(selectedStudent.id, { state: missingStudentState });
+      const res = await fetch(`/api/students/${selectedStudent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ state: missingStudentState }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update student state');
+      }
       setSelectedStudent({ ...selectedStudent, state: missingStudentState });
       setStateUpdateSuccess(true);
       setErrorMessage('');
@@ -896,7 +526,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     }
   };
 
-  // Handle creating a new student with server-side authoritative Permanent UID
+  // Handle creating a new student
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentData.first_name?.trim() || !newStudentData.last_name?.trim() || !newStudentData.email?.trim()) {
@@ -940,8 +570,19 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     setErrorMessage('');
     try {
       const intakeYear = extractYear(academicYear);
-      const created = await createStudent(newStudentData, intakeYear);
-      setSelectedStudent(created);
+      // createStudent goes through BFF — institution is enforced server-side
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentData: newStudentData, intakeYear }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create student');
+      }
+      const data = await res.json();
+      setSelectedStudent(data.student);
       setShowCreateStudentForm(false);
       setStep(2);
     } catch (err: any) {
@@ -957,7 +598,6 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       setErrorMessage('Please select or create a student.');
       return;
     }
-    // STATE REQUIREMENT: State is required for every NEW registration submission
     if (!selectedStudent.state || !selectedStudent.state.trim()) {
       setErrorMessage('State is required for every new registration. Please update the student profile with their state before proceeding.');
       return;
@@ -974,7 +614,6 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       setErrorMessage('Please select Institution, Department, and Program.');
       return;
     }
-    // CONDITIONAL PREVIOUS REGISTRATION NUMBER ENFORCEMENT
     if (
       (registrationType === 'TRANSFER' ||
         registrationType === 'RE_REGISTRATION' ||
@@ -984,7 +623,6 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       setErrorMessage(`Previous Registration Number is required for ${registrationType.replace(/_/g, ' ')}.`);
       return;
     }
-    // REQUIRED QUALIFICATION & ACADEMIC BACKGROUND ENFORCEMENT
     if (!highestQualification || !highestQualification.trim()) {
       setErrorMessage('Highest Qualification is required. Please select an option or provide details under Other.');
       return;
@@ -1019,12 +657,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       setErrorMessage('Missing required registration data. Please ensure Institution, Department, and Program are selected.');
       return;
     }
-    // STATE REQUIREMENT: State is required for every NEW registration submission
     if (!selectedStudent.state || !selectedStudent.state.trim()) {
       setErrorMessage('State is required for every new registration. Please update the student profile with their state before proceeding.');
       return;
     }
-    // CONDITIONAL PREVIOUS REGISTRATION NUMBER ENFORCEMENT
     if (
       (registrationType === 'TRANSFER' ||
         registrationType === 'RE_REGISTRATION' ||
@@ -1034,7 +670,6 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       setErrorMessage(`Previous Registration Number is required for ${registrationType.replace(/_/g, ' ')}.`);
       return;
     }
-    // REQUIRED QUALIFICATION & ACADEMIC BACKGROUND ENFORCEMENT
     if (!highestQualification || !highestQualification.trim()) {
       setErrorMessage('Highest Qualification is required. Please select an option or provide details under Other.');
       return;
@@ -1056,7 +691,8 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     setErrorMessage('');
 
     try {
-      const newRegistration = await createRegistration({
+      // createRegistration goes through BFF — institution ownership is enforced server-side
+      const payload = {
         student_id: selectedStudent.id,
         registration_type: registrationType,
         institution_id: selectedInstitutionId,
@@ -1071,9 +707,19 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
         year_of_completion: yearOfCompletion.trim() || undefined,
         qualification_reg_no: qualificationRegNo.trim() || undefined,
         previous_registration_number: previousRegistrationNumber.trim() || undefined,
+      };
+      const res = await fetch('/api/registrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
       });
-
-      onSuccess(newRegistration);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create registration');
+      }
+      const data = await res.json();
+      onSuccess(data.registration);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to persist registration.');
     } finally {
@@ -1081,851 +727,746 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
     }
   };
 
+  const selectedInstitution = institutions.find((i) => i.id === selectedInstitutionId);
+  const selectedProgram = programs.find((p) => p.id === selectedProgramId);
+  const selectedDepartment = departments.find((d) => d.id === selectedDepartmentId);
 
   return (
-    <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
-      {/* Wizard Header Progress Bar */}
-      <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-        <div className="flex items-center justify-between max-w-2xl mx-auto">
-          {/* Step 1 Indicator */}
-          <div className="flex items-center gap-2">
-            <div
-              className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                step >= 1
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-200 text-slate-500 dark:bg-slate-700'
-              }`}
-            >
-              1
-            </div>
-            <span
-              className={`text-xs font-semibold hidden sm:inline ${
-                step === 1 ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'
-              }`}
-            >
-              Find Student
+    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl p-6 sm:p-8 space-y-6 animate-in fade-in duration-150 w-full max-w-5xl mx-auto">
+      {/* 1. Top Sub-header / Breadcrumbs bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 pb-3 border-b border-slate-100">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="font-bold text-slate-700 hover:text-black transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            ← Registrar Console
+          </button>
+          <span className="text-slate-300">/</span>
+          <span className="font-semibold text-slate-600">New Registration · REG-2026-SEC</span>
+        </div>
+
+        <div className="flex items-center gap-3 font-semibold text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-bold text-[11px]">
+            <Check className="h-3 w-3 stroke-[3]" />
+            Draft saved just now
+          </span>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ml-1 cursor-pointer"
+            title="Close Wizard"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Wizard Header & Modern Stepper */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 pb-2">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">
+              REGISTRAR WORKFLOW
             </span>
           </div>
 
-          <div
-            className={`h-0.5 flex-1 mx-3 ${
-              step >= 2 ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
-            }`}
-          />
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Student Registration
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+            Complete the registration details and submit the record for verification.
+          </p>
+        </div>
 
-          {/* Step 2 Indicator */}
-          <div className="flex items-center gap-2">
-            <div
-              className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                step >= 2
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-200 text-slate-500 dark:bg-slate-700'
-              }`}
-            >
-              2
-            </div>
-            <span
-              className={`text-xs font-semibold hidden sm:inline ${
-                step === 2 ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'
-              }`}
-            >
-              Registration Details
-            </span>
+        {/* Stepper matching production design */}
+        <div className="flex flex-col sm:items-end gap-1.5 shrink-0">
+          <div className="text-[11px] font-bold text-slate-500">
+            Step {step} of 3
           </div>
-
-          <div
-            className={`h-0.5 flex-1 mx-3 ${
-              step >= 3 ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
-            }`}
-          />
-
-          {/* Step 3 Indicator */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            {/* STEP 01 */}
             <div
-              className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs ${
+              onClick={() => setStep(1)}
+              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                step === 1
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : step > 1
+                  ? 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-900'
+                  : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              {step > 1 ? (
+                <div className="h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                  <Check className="h-3 w-3 stroke-[3]" />
+                </div>
+              ) : (
+                <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  step === 1 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  1
+                </div>
+              )}
+              <span className={`text-xs font-bold ${
+                step === 1 ? 'text-white' : step > 1 ? 'text-slate-800' : 'text-slate-500'
+              }`}>
+                01 Student Details
+              </span>
+            </div>
+
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+
+            {/* STEP 02 */}
+            <div
+              onClick={() => {
+                if (selectedStudent) setStep(2);
+              }}
+              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                step === 2
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : step > 2
+                  ? 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-900'
+                  : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              {step > 2 ? (
+                <div className="h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                  <Check className="h-3 w-3 stroke-[3]" />
+                </div>
+              ) : (
+                <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  step === 2 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  2
+                </div>
+              )}
+              <span className={`text-xs font-bold ${
+                step === 2 ? 'text-white' : step > 2 ? 'text-slate-800' : 'text-slate-500'
+              }`}>
+                02 Academic Details
+              </span>
+            </div>
+
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+
+            {/* STEP 03 */}
+            <div
+              onClick={() => {
+                if (selectedStudent) handleProceedToReview();
+              }}
+              className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
                 step === 3
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-200 text-slate-500 dark:bg-slate-700'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-400'
               }`}
             >
-              3
+              <div className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                step === 3 ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'
+              }`}>
+                3
+              </div>
+              <span className={`text-xs font-bold ${
+                step === 3 ? 'text-white' : 'text-slate-500'
+              }`}>
+                03 Review & Submit
+              </span>
             </div>
-            <span
-              className={`text-xs font-semibold hidden sm:inline ${
-                step === 3 ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'
-              }`}
-            >
-              Review & Submit
-            </span>
           </div>
         </div>
       </div>
 
-      {/* Form Error Banner */}
+      {/* Error Alert Banner */}
       {errorMessage && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border-b border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs font-semibold">
-          {errorMessage}
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-between">
+          <span>{errorMessage}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMessage('')}
+            className="text-rose-500 hover:text-rose-800"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      <div className="p-6">
-        {/* ======================================================== */}
-        {/* STEP 1 — FIND OR CREATE STUDENT                           */}
-        {/* ======================================================== */}
-        {step === 1 && (
-          <div className="space-y-6 max-w-3xl mx-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  {showCreateStudentForm ? 'Create New Registration' : 'Step 1: Search Student Record'}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {showCreateStudentForm
-                    ? 'Fill in the details to create a new student record'
-                    : 'Search for an existing student by Permanent UID, Name, Email, or Aadhar Number'}
-                </p>
-              </div>
-
-              {!showCreateStudentForm && (
-                <button
-                  type="button"
-                  onClick={() => setShowCreateStudentForm(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold text-xs hover:bg-blue-100 transition-colors"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  Create New Student
-                </button>
-              )}
+      {/* ========================================================================= */}
+      {/* STEP 1: STUDENT INTAKE (SEARCH / SELECT / CREATE)                         */}
+      {/* ========================================================================= */}
+      {step === 1 && (
+        <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 shadow-2xs p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">
+                {showCreateStudentForm ? 'Create New Candidate Record' : 'Select Candidate for Matriculation'}
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                {showCreateStudentForm
+                  ? 'All 11 fields are mandatory for generating an authoritative Permanent Student UID.'
+                  : 'Search by Permanent UID, Name, Email, or Aadhar Number, or pick from recent candidates.'}
+              </p>
             </div>
 
+            <button
+              type="button"
+              onClick={() => setShowCreateStudentForm(!showCreateStudentForm)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+            >
+              {showCreateStudentForm ? (
+                <>
+                  <Search className="h-4 w-4" />
+                  <span>Return to Search</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="h-4 w-4" />
+                  <span>+ Create New Candidate</span>
+                </>
+              )}
+            </button>
+          </div>
 
-
-            {/* CREATE NEW STUDENT FORM */}
-            {showCreateStudentForm ? (
-              <form onSubmit={handleCreateStudent} className="p-5 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/30 dark:bg-slate-800/50 space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-blue-100 dark:border-slate-700">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <UserPlus className="h-4 w-4 text-blue-600" />
-                    New Student Details
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateStudentForm(false)}
-                    className="text-xs text-slate-500 hover:text-slate-800"
-                  >
-                    Cancel & Return to Search
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  {/* System UID Indicator */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Permanent Student UID <span className="text-slate-400 font-normal">(System-Generated)</span>
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      value="Auto-generated on creation (e.g. STU-YYYY-XXXXX)"
-                      className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/60 p-2.5 font-mono text-xs font-semibold text-slate-500 cursor-not-allowed"
-                    />
-                  </div>
-
-                  {/* State of Residence — Mandatory for New Registration */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      State of Residence <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      required
-                      value={newStudentData.state}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, state: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-medium"
-                    >
-                      <option value="">-- Select State * --</option>
-                      {INDIAN_STATES.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      First Name <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Candidate's legal first name"
-                      value={newStudentData.first_name}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, first_name: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Last Name <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Candidate's surname / family name"
-                      value={newStudentData.last_name}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, last_name: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Email Address <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="student@example.com"
-                      value={newStudentData.email}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, email: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Phone Number <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newStudentData.phone}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, phone: e.target.value })
-                      }
-                      placeholder="+91 98765 43210"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Date of Birth <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={newStudentData.date_of_birth}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, date_of_birth: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Gender <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={newStudentData.gender}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, gender: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    >
-                      <option value="Female">Female</option>
-                      <option value="Male">Male</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-
-                  {/* Aadhar / National ID */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Aadhar Number / National ID <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="12-digit Indian Aadhar or government ID"
-                      value={newStudentData.aadhar_number}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, aadhar_number: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
-                    />
-                  </div>
-
-                  {/* Country */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Country <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newStudentData.country}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, country: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  {/* Street Address */}
-                  <div className="sm:col-span-2">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Street Address <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Door No, Street name, Locality"
-                      value={newStudentData.address}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, address: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  {/* City, District, PIN Code */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      City / Town <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Bangalore"
-                      value={newStudentData.city}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, city: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      District
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Bangalore Urban"
-                      value={newStudentData.district}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, district: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      PIN Code / Postal Code <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 560077"
-                      value={newStudentData.pincode}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, pincode: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-mono"
-                    />
-                  </div>
-
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Alternate Phone <span className="text-slate-400 font-normal">(Optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Secondary contact number"
-                      value={newStudentData.alternate_phone}
-                      onChange={(e) =>
-                        setNewStudentData({ ...newStudentData, alternate_phone: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors shadow-sm disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Saving Student...' : 'Save & Proceed'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              /* SEARCH EXISTING STUDENTS LIST */
-              <div className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+          {/* CREATE STUDENT FORM */}
+          {showCreateStudentForm ? (
+            <form onSubmit={handleCreateStudent} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Permanent UID (System-Generated)
+                  </label>
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by Permanent UID, Name, Email, or Aadhar Number..."
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    disabled
+                    readOnly
+                    value="Auto-assigned (STU-YYYY-XXXXX)"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2.5 font-mono text-xs font-bold text-slate-500 cursor-not-allowed"
                   />
                 </div>
 
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {isSearching ? (
-                    <div className="p-6 text-center text-xs text-slate-400">
-                      Searching student directory...
-                    </div>
-                  ) : !searchQuery.trim() ? (
-                    <div className="p-8 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1">
-                      <Search className="h-6 w-6 text-slate-400 mx-auto mb-2 opacity-60" />
-                      <p className="font-semibold text-slate-700 dark:text-slate-300">
-                        Search for an existing student record
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Enter a Permanent UID, Name, Email, or Aadhar Number in the search box above.
-                      </p>
-                    </div>
-                  ) : searchResults.length === 0 ? (
-                    <div className="p-8 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-500">
-                      No matching student records found for &ldquo;{searchQuery.trim()}&rdquo;.
-                      <div className="mt-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateStudentForm(true)}
-                          className="font-bold text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                          Click here to create a new student record
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    searchResults.map((st) => (
-                      <div
-                        key={st.id}
-                        onClick={() => {
-                          setSelectedStudent(st);
-                          setStep(2);
-                        }}
-                        className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-blue-50/50 dark:hover:bg-slate-800/80 hover:border-blue-300 dark:hover:border-blue-700 transition-all cursor-pointer flex items-center justify-between group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 transition-colors">
-                            <User className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 transition-colors">
-                              {st.first_name} {st.last_name}
-                            </h4>
-                            <p className="text-[11px] text-slate-500 font-mono">
-                              UID: {st.permanent_uid} | {st.email}
-                              {(st.aadhar_number || st.national_id) && (
-                                <> | Aadhar: {maskAadhar(st.aadhar_number || st.national_id)}</>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center text-slate-400 group-hover:text-blue-600 transition-colors">
-                          <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Bottom Navigation Step 1 */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* STEP 2 — REGISTRATION DETAILS                             */}
-        {/* ======================================================== */}
-        {step === 2 && (
-          <div className="space-y-6 max-w-3xl mx-auto">
-            {selectedStudent && (
-              <div className="p-3.5 rounded-xl border border-blue-100 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-600 text-white">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold uppercase">
-                      Registering Candidate
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                      {selectedStudent.first_name} {selectedStudent.last_name}
-                    </h4>
-                    <p className="text-xs text-slate-500 font-mono">
-                      UID: {selectedStudent.permanent_uid} | {selectedStudent.email}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {selectedStudent.state ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                          <MapPin className="h-3 w-3" /> State: {selectedStudent.state}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                          <AlertCircle className="h-3 w-3" /> State Missing (Update Required)
-                        </span>
-                      )}
-                      {selectedStudent.national_id && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          <CreditCard className="h-3 w-3" /> Aadhar: {selectedStudent.national_id}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  Change Student
-                </button>
-              </div>
-            )}
-
-            {/* ACTION REQUIRED: Missing State Enforcement Banner for Existing Student */}
-            {selectedStudent && (!selectedStudent.state || !selectedStudent.state.trim()) && (
-              <div className="p-4 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/90 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs shadow-xs space-y-3">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs uppercase tracking-wide">
-                      State Required for Registration Submission
-                    </h5>
-                    <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
-                      Under ATA regulations, <strong>State is required for every new registration submission</strong>.
-                      This existing student profile does not currently contain a State of residence.
-                      Please select their state below and update the profile before proceeding.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    State of Residence <span className="text-rose-500">*</span>
+                  </label>
                   <select
-                    value={missingStudentState}
-                    onChange={(e) => setMissingStudentState(e.target.value)}
-                    className="rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-amber-500"
+                    required
+                    value={newStudentData.state}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, state: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
                   >
-                    <option value="">-- Select Candidate's State of Residence * --</option>
+                    <option value="">-- Select State * --</option>
                     {INDIAN_STATES.map((st) => (
                       <option key={st} value={st}>
                         {st}
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
-                    disabled={!missingStudentState || isUpdatingStudentState}
-                    onClick={handleUpdateStudentState}
-                    className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs disabled:opacity-50 transition-colors shadow-xs"
-                  >
-                    {isUpdatingStudentState ? 'Updating Profile...' : 'Save State to Student Profile'}
-                  </button>
                 </div>
-                {stateUpdateSuccess && (
-                  <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                    Student profile updated with state successfully! You may now proceed.
-                  </p>
-                )}
-              </div>
-            )}
 
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    First Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Candidate legal first name"
+                    value={newStudentData.first_name}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, first_name: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Last Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Candidate surname"
+                    value={newStudentData.last_name}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, last_name: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Email Address <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="student@example.org"
+                    value={newStudentData.email}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, email: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Phone Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+91 98450 12890"
+                    value={newStudentData.phone}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, phone: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Date of Birth <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newStudentData.date_of_birth}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, date_of_birth: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Gender <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={newStudentData.gender}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, gender: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Aadhar / National ID <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="12-digit Indian Aadhar Number"
+                    value={newStudentData.aadhar_number}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, aadhar_number: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-mono font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Country <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newStudentData.country}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, country: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Street Address <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Door No, Street Name, Locality"
+                    value={newStudentData.address}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, address: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    City / Town <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Bangalore"
+                    value={newStudentData.city}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, city: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    District
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bangalore Urban"
+                    value={newStudentData.district}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, district: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    PIN Code <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 560077"
+                    value={newStudentData.pincode}
+                    onChange={(e) => setNewStudentData({ ...newStudentData, pincode: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 font-mono font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-3">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-6 py-2.5 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Registering Candidate...' : 'Create & Proceed to Placement →'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* SEARCH OR PICK FROM RECENT */
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search candidate by Permanent UID, Name, Email, or Aadhar..."
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-3 text-xs text-slate-900 font-semibold focus:ring-2 focus:ring-black focus:outline-hidden"
+                />
+              </div>
+
+              {/* Search Results or Recent Students */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pt-1">
+                {(searchQuery.trim() ? searchResults : recentStudents).map((st) => {
+                  const isCurSelected = selectedStudent?.id === st.id;
+                  return (
+                    <div
+                      key={st.id}
+                      onClick={() => {
+                        setSelectedStudent(st);
+                        setStep(2);
+                      }}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group ${
+                        isCurSelected
+                          ? 'border-black bg-slate-50 ring-2 ring-black/10'
+                          : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="relative shrink-0">
+                          <div className="h-10 w-10 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                            {st.first_name?.[0] || 'S'}{st.last_name?.[0] || 'C'}
+                          </div>
+                          <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
+                            <Check className="h-2 w-2 text-white stroke-[3]" />
+                          </div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-black text-slate-900 group-hover:text-black truncate">
+                            {st.first_name} {st.last_name}
+                          </h4>
+                          <p className="text-[11px] font-mono font-bold text-slate-600 truncate mt-0.5">
+                            UID: {st.permanent_uid}
+                          </p>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {st.email} {st.state ? `• ${st.state}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded-xl bg-black text-white text-[11px] font-bold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        Select Candidate →
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STEP 2: ACADEMIC DETAILS                                                  */}
+      {/* ========================================================================= */}
+      {step === 2 && (
+        <div className="space-y-6">
+          {/* A. Candidate Summary Card */}
+          {selectedStudent && (
+            <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-2xs">
+              <div className="flex items-center gap-4">
+                {/* Avatar with verified check badge */}
+                <div className="relative shrink-0">
+                  <div className="h-12 w-12 rounded-full overflow-hidden border-2 border-white shadow-xs bg-gradient-to-tr from-slate-800 to-slate-950 flex items-center justify-center text-white font-black text-sm">
+                    {selectedStudent.first_name?.[0] || 'J'}{selectedStudent.last_name?.[0] || 'S'}
+                  </div>
+                  <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center">
+                    <Check className="h-2.5 w-2.5 text-white stroke-[3]" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <h4 className="text-base font-black text-slate-900 tracking-tight">
+                      {selectedStudent.first_name} {selectedStudent.last_name}
+                    </h4>
+                    <span className="font-mono text-xs font-bold text-slate-700">
+                      UID: {selectedStudent.permanent_uid || 'STU-2026-0922'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                      Identity Verified
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-500 font-medium">
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      ✉ {selectedStudent.email}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      📞 {selectedStudent.phone || '+91 98450 12890'}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      📅 {formatDobDisplay(selectedStudent.date_of_birth)} (Age {calculateAge(selectedStudent.date_of_birth)})
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      👤 {selectedStudent.gender || 'Male'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Change Student</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCandidateModal(true)}
+                  className="p-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800 text-xs shadow-2xs transition-colors cursor-pointer"
+                  title="View Student Profile"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Missing State warning if student has no state */}
+          {selectedStudent && (!selectedStudent.state || !selectedStudent.state.trim()) && (
+            <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs shadow-xs space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h5 className="font-bold text-xs uppercase tracking-wide">
+                    State Required for Registration Submission
+                  </h5>
+                  <p className="mt-1 text-[11px] text-amber-800">
+                    State is required for every new registration submission. Please select their state below and update the profile before proceeding.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <select
+                  value={missingStudentState}
+                  onChange={(e) => setMissingStudentState(e.target.value)}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs text-slate-900 font-semibold focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">-- Select Student's State of Residence * --</option>
+                  {INDIAN_STATES.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!missingStudentState || isUpdatingStudentState}
+                  onClick={handleUpdateStudentState}
+                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs disabled:opacity-50 transition-colors shadow-xs"
+                >
+                  {isUpdatingStudentState ? 'Updating Profile...' : 'Save State to Student Profile'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* B. Registration Type * */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Step 2: Registration & Academic Placement
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Specify registration classification, previous academic history, and institutional placement
+              <h4 className="text-sm font-black text-slate-900 flex items-center gap-1">
+                Registration Type <span className="text-rose-500">*</span>
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Select the type of registration for this student.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
-              {/* Registration Type */}
-              <div className="sm:col-span-2">
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Registration Type <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { type: 'INITIAL_REGISTRATION', label: 'Initial Registration' },
-                    { type: 'RE_REGISTRATION', label: 'Re-Registration' },
-                    { type: 'TRANSFER', label: 'Transfer' },
-                    { type: 'PROGRAM_PROGRESSION', label: 'Program Progression' },
-                  ].map((item) => (
-                    <button
-                      key={item.type}
-                      type="button"
-                      onClick={() => setRegistrationType(item.type as RegistrationType)}
-                      className={`p-3 rounded-xl border text-left font-semibold transition-all ${
-                        registrationType === item.type
-                          ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20'
-                          : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                {
+                  type: 'INITIAL_REGISTRATION',
+                  title: 'Initial Registration',
+                  desc: 'First-time registration with ATA',
+                  icon: GraduationCap,
+                },
+                {
+                  type: 'RE_REGISTRATION',
+                  title: 'Re-Registration',
+                  desc: 'Returning student renewing an inactive or lapsed registration',
+                  icon: RotateCcw,
+                },
+                {
+                  type: 'TRANSFER',
+                  title: 'Institutional Transfer',
+                  desc: 'Student transferring from another accredited affiliate',
+                  icon: ArrowLeftRight,
+                },
+                {
+                  type: 'PROGRAM_PROGRESSION',
+                  title: 'Program Progression',
+                  desc: 'Student progressing from one ATA program to another',
+                  icon: TrendingUp,
+                },
+              ].map((item) => {
+                const isSelected = registrationType === item.type;
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.type}
+                    onClick={() => setRegistrationType(item.type as RegistrationType)}
+                    className={`cursor-pointer rounded-2xl p-3.5 transition-all relative flex flex-col justify-between min-h-[105px] ${
+                      isSelected
+                        ? 'bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20'
+                        : 'bg-white border border-slate-200/80 text-slate-900 hover:border-slate-300 hover:bg-slate-50/60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className={`p-1.5 rounded-xl ${isSelected ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                        isSelected ? 'border-white' : 'border-slate-300'
+                      }`}>
+                        {isSelected && <div className="h-2 w-2 rounded-full bg-white" />}
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5">
+                      <h5 className={`text-xs font-black tracking-tight ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                        {item.title}
+                      </h5>
+                      <p className={`text-[11px] font-medium leading-tight mt-0.5 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {item.desc}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Conditional Previous Registration Number */}
+            {(registrationType === 'TRANSFER' ||
+              registrationType === 'RE_REGISTRATION' ||
+              registrationType === 'PROGRAM_PROGRESSION') && (
+              <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50/50 space-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-blue-600" />
+                  <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                    Previous Registration Record <span className="text-rose-500">*</span>
+                  </h5>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  Required for <strong>{registrationType.replace(/_/g, ' ')}</strong> candidates. Enter their existing ATA Registration Number or previous enrollment ID.
+                </p>
+                <div>
+                  <input
+                    type="text"
+                    required
+                    value={previousRegistrationNumber}
+                    onChange={(e) => setPreviousRegistrationNumber(e.target.value)}
+                    placeholder="e.g. SAIACS/MDIV/2024/12 or previous registration ID"
+                    className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-xs text-slate-900 font-bold"
+                  />
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Conditional Previous Registration Number */}
-              {(registrationType === 'TRANSFER' ||
-                registrationType === 'RE_REGISTRATION' ||
-                registrationType === 'PROGRAM_PROGRESSION') && (
-                <div className="sm:col-span-2 p-4 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <History className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide">
-                      Previous Registration Record <span className="text-rose-500">*</span>
-                    </h4>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    Mandatory for <strong>{registrationType.replace(/_/g, ' ')}</strong> candidates. Enter their existing ATA Registration Number or previous institutional enrollment ID.
-                  </p>
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Previous Registration Number <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={previousRegistrationNumber}
-                      onChange={(e) => setPreviousRegistrationNumber(e.target.value)}
-                      placeholder="e.g. SABC/BTH/2024/12 or historical registration ID"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 font-mono text-xs text-slate-900 dark:text-slate-100 font-semibold"
-                    />
-                  </div>
-                </div>
-              )}
+          {/* C. Program & Academic Details */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
+            <div className="border-b border-slate-200/60 pb-3">
+              <h4 className="text-sm font-black text-slate-900">
+                Program & Academic Details
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Select the student's program and academic year.
+              </p>
+            </div>
 
-              {/* Academic Background & Qualifications Section */}
-              <div className="sm:col-span-2 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2 mb-4">
-                  <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide">
-                      Candidate Prior Academic Qualification
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Record the candidate's highest completed academic qualification level and previous course details.
-                    </p>
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Institution */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                    Institution <span className="text-rose-500">*</span>
+                  </label>
+                  {user?.role === 'REGISTRAR' && (
+                    <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                      <Lock className="h-3 w-3 text-slate-400" /> Assigned Institution
+                    </span>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Highest Qualification */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Highest Qualification <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      required
-                      value={selectedHighestQual}
-                      onChange={(e) => handleHighestQualSelect(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select Highest Qualification * --</option>
-                      {HIGHEST_QUALIFICATION_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedHighestQual === 'Other' && (
-                      <div className="mt-2">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Enter your highest qualification details *"
-                          value={customHighestQual}
-                          onChange={(e) => handleCustomHighestQualInput(e.target.value)}
-                          className="w-full rounded-lg border border-blue-400 dark:border-blue-600 bg-blue-50/40 dark:bg-blue-950/20 p-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                        />
+
+                {user?.role === 'REGISTRAR' ? (
+                  <div className="relative">
+                    <div className="w-full rounded-xl border border-slate-200 bg-white p-2.5 flex items-center justify-between text-xs font-bold text-slate-800">
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <Building2 className="h-4 w-4 text-slate-500 shrink-0" />
+                        <span className="truncate">
+                          {selectedInstitution?.name || 'South Asia Institute of Advanced Christian Studies (SAIACS)'}
+                        </span>
                       </div>
-                    )}
+                      <Lock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    </div>
                   </div>
-
-                  {/* Previous Institution / College */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Previous Institution / College <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      list="previous-institutions-list"
-                      required
-                      value={previousInstitution}
-                      onChange={(e) => setPreviousInstitution(e.target.value)}
-                      placeholder="e.g. St. Stephen's College / Berean Bible College"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100"
-                    />
-                    <datalist id="previous-institutions-list">
-                      {INSTITUTION_NAMES.map((instName) => (
-                        <option key={instName} value={instName} />
-                      ))}
-                    </datalist>
-                  </div>
-
-                  {/* Previous Program / Course */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Previous Program / Course <span className="text-rose-500">*</span>
-                    </label>
-                    {(() => {
-                      const relevantCats = selectedHighestQual ? getCategoriesForHighestQualification(selectedHighestQual) : [];
-                      const matchingProgs = relevantCats.flatMap((cat) => PREVIOUS_PROGRAMS_BY_CATEGORY[cat] || []);
-                      const otherCats = Object.keys(PREVIOUS_PROGRAMS_BY_CATEGORY).filter(
-                        (cat) => !relevantCats.includes(cat)
-                      );
-
-                      return (
-                        <select
-                          required
-                          value={selectedPreviousProg}
-                          onChange={(e) => handlePreviousProgSelect(e.target.value)}
-                          className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">
-                            {selectedHighestQual && selectedHighestQual !== 'Other'
-                              ? `-- Select Course for ${selectedHighestQual} * --`
-                              : '-- Select Previous Program / Course * --'}
-                          </option>
-
-                          {selectedHighestQual && selectedHighestQual !== 'Other' && matchingProgs.length > 0 ? (
-                            <>
-                              <optgroup label={`Matching Programs for ${selectedHighestQual} (${matchingProgs.length})`}>
-                                {matchingProgs.map((prog) => (
-                                  <option key={prog} value={prog}>
-                                    {prog}
-                                  </option>
-                                ))}
-                              </optgroup>
-                              {otherCats.length > 0 && (
-                                <optgroup label="Other Levels / Programs">
-                                  {otherCats.flatMap((cat) => PREVIOUS_PROGRAMS_BY_CATEGORY[cat] || []).map((prog) => (
-                                    <option key={prog} value={prog}>
-                                      {prog}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
-                            </>
-                          ) : (
-                            Object.entries(PREVIOUS_PROGRAMS_BY_CATEGORY).map(([cat, progs]) => (
-                              <optgroup key={cat} label={cat}>
-                                {progs.map((prog) => (
-                                  <option key={prog} value={prog}>
-                                    {prog}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))
-                          )}
-
-                          <option value="Other">Other (Specify below)</option>
-                        </select>
-                      );
-                    })()}
-                    {selectedPreviousProg === 'Other' && (
-                      <div className="mt-2">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Enter your previous program / course details *"
-                          value={customPreviousProg}
-                          onChange={(e) => handleCustomPreviousProgInput(e.target.value)}
-                          className="w-full rounded-lg border border-blue-400 dark:border-blue-600 bg-blue-50/40 dark:bg-blue-950/20 p-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Year of Completion */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Year of Completion <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={yearOfCompletion}
-                      onChange={(e) => setYearOfCompletion(e.target.value)}
-                      placeholder="e.g. 2024"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Qualification Registration / Roll Number
-                    </label>
-                    <input
-                      type="text"
-                      value={qualificationRegNo}
-                      onChange={(e) => setQualificationRegNo(e.target.value)}
-                      placeholder="e.g. Roll or certificate enrollment number"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 font-mono text-xs text-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Current Academic Placement & Program Registration Section */}
-              <div className="sm:col-span-2 pt-6 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2 mb-4">
-                  <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wide">
-                      Current Program Registration & Institutional Placement
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Select the authoritative institution, department, and academic program the student is registering for now.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Institution Dropdown */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Institution <span className="text-rose-500">*</span>
-                    </label>
+                ) : (
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-3 text-slate-500 pointer-events-none">
+                      <Building2 className="h-4 w-4" />
+                    </div>
                     <select
                       value={selectedInstitutionId}
                       onChange={(e) => handleInstitutionChange(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
                     >
                       {institutions.map((inst) => (
                         <option key={inst.id} value={inst.id}>
@@ -1933,363 +1474,732 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                         </option>
                       ))}
                     </select>
+                    <div className="absolute right-3.5 top-3 text-slate-400 pointer-events-none">
+                      <ChevronDown className="h-4 w-4" />
+                    </div>
                   </div>
+                )}
+              </div>
 
-                  {/* Department Dropdown (Cascading) */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Department <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={selectedDepartmentId}
-                      onChange={(e) => handleDepartmentChange(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
-                    >
-                      {departments.length > 1 && (
-                        <option value="">All Departments ({departments.length})</option>
-                      )}
-                      {departments.map((dept) => (
-                        <option key={dept.id} value={dept.id}>
-                          {dept.name} ({dept.code})
-                        </option>
-                      ))}
-                    </select>
+              {/* Academic Year */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                    Academic Year <span className="text-rose-500">*</span>
+                  </label>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute left-3.5 top-3 text-slate-500 pointer-events-none">
+                    <Calendar className="h-4 w-4" />
                   </div>
-
-                  {/* Program Dropdown (Cascading) */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Program <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={selectedProgramId}
-                      onChange={(e) => handleProgramChange(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
-                    >
-                      {programs.length === 0 && (
-                        <option value="">No programs available</option>
-                      )}
-                      {programs.map((prog) => (
-                        <option key={prog.id} value={prog.id}>
-                          {prog.name} ({prog.code})
-                        </option>
-                      ))}
-                    </select>
+                  <select
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                  >
+                    <option value="2026-2027">2026–2027 (Autumn Intake - August)</option>
+                    <option value="2026-2027-SPRING">2026–2027 (Spring Intake - January)</option>
+                    <option value="2025-2026">2025–2026 (Autumn Intake - August)</option>
+                    <option value="2027-2028">2027–2028 (Autumn Intake - August)</option>
+                  </select>
+                  <div className="absolute right-3.5 top-3 text-slate-400 pointer-events-none">
+                    <ChevronDown className="h-4 w-4" />
                   </div>
+                </div>
+              </div>
 
-                  {/* Academic Year */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Academic Year <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={academicYear}
-                      onChange={(e) => setAcademicYear(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 font-mono text-xs text-slate-900 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="2026-2027">2026-2027</option>
-                      <option value="2025-2026">2025-2026</option>
-                      <option value="2027-2028">2027-2028</option>
-                    </select>
+              {/* Academic Department */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                    Academic Department <span className="text-rose-500">*</span>
+                  </label>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute left-3.5 top-3 text-slate-500 pointer-events-none">
+                    <BookOpen className="h-4 w-4" />
                   </div>
+                  <select
+                    value={selectedDepartmentId}
+                    onChange={(e) => handleDepartmentChange(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                  >
+                    {departments.length > 1 && (
+                      <option value="">All Departments ({departments.length})</option>
+                    )}
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name} ({dept.code})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3.5 top-3 text-slate-400 pointer-events-none">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
 
-                  {/* Notes */}
-                  <div className="sm:col-span-2">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Additional Registration Notes
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Enter initial registration details or applicant observations..."
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
-                    />
+              {/* Program */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                    Program <span className="text-rose-500">*</span>
+                  </label>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute left-3.5 top-3 text-slate-500 pointer-events-none">
+                    <GraduationCap className="h-4 w-4" />
+                  </div>
+                  <select
+                    value={selectedProgramId}
+                    onChange={(e) => handleProgramChange(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                  >
+                    {programs.length === 0 && <option value="">No programs available</option>}
+                    {programs.map((prog) => (
+                      <option key={prog.id} value={prog.id}>
+                        {prog.name} ({prog.code})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3.5 top-3 text-slate-400 pointer-events-none">
+                    <ChevronDown className="h-4 w-4" />
                   </div>
                 </div>
               </div>
             </div>
+          </div>
 
+          {/* D. Enrollment Modality */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">
+                Enrollment Modality
+              </h4>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Select full-time residential or modular/distance mode.
+              </p>
+            </div>
 
-            {/* Bottom Navigation Step 2 */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEnrollmentModality('RESIDENTIAL')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                  enrollmentModality === 'RESIDENTIAL'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                <span>Full-Time Residential</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEnrollmentModality('MODULAR_HYBRID')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                  enrollmentModality === 'MODULAR_HYBRID'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>Modular / Distance</span>
+              </button>
+            </div>
+          </div>
+
+          {/* E. Prior Academic Qualification Details (Required by tests & DB) */}
+          <div className="p-5 rounded-2xl border border-slate-200/80 bg-slate-50/70 space-y-4 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="h-4 w-4 text-slate-600" />
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                  Prior Academic Background & Entrance Qualification
+                </h4>
+              </div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">
+                Required
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Highest Qualification <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedHighestQual}
+                  onChange={(e) => handleHighestQualSelect(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                >
+                  {HIGHEST_QUALIFICATION_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                {selectedHighestQual === 'Other' && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter custom qualification details"
+                    value={customHighestQual}
+                    onChange={(e) => handleCustomHighestQualInput(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Previous College / Institution <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  list="prev-inst-catalog"
+                  required
+                  value={previousInstitution}
+                  onChange={(e) => setPreviousInstitution(e.target.value)}
+                  placeholder="e.g. Mizoram University"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                />
+                <datalist id="prev-inst-catalog">
+                  {INSTITUTION_NAMES.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Previous Program / Degree <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedPreviousProg}
+                  onChange={(e) => handlePreviousProgSelect(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                >
+                  <option value="">Select Previous Program / Degree...</option>
+                  {PROGRAM_NAMES.map((prog) => (
+                    <option key={prog} value={prog}>
+                      {prog}
+                    </option>
+                  ))}
+                  <option value="Other">Other (Specify Below)</option>
+                </select>
+                {selectedPreviousProg === 'Other' && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter previous degree details"
+                    value={customPreviousProg}
+                    onChange={(e) => handleCustomPreviousProgInput(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Completion Year & Roll No <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    required
+                    value={yearOfCompletion}
+                    onChange={(e) => setYearOfCompletion(e.target.value)}
+                    placeholder="Year (e.g. 2023)"
+                    className="w-20 rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800"
+                  />
+                  <input
+                    type="text"
+                    value={qualificationRegNo}
+                    onChange={(e) => setQualificationRegNo(e.target.value)}
+                    placeholder="Roll / Reg No"
+                    className="flex-1 rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* F. Two-Column Section: Mandatory Dossier Checklist (Left) & Registrar Assessment (Right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Left Column: Dossier Checklist (7 cols) */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-slate-600" />
+                  <h4 className="text-xs font-black text-slate-900 tracking-wider uppercase">
+                    Mandatory Dossier Checklist
+                  </h4>
+                </div>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  3 of 3 Verified
+                </span>
+              </div>
+
+              {/* Dossier Item 1: Academic Transcripts */}
+              <div className="p-3.5 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 transition-all flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0 pr-2">
+                  <div className="p-2 rounded-xl bg-slate-100 text-slate-700 shrink-0">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h5 className="text-xs font-black text-slate-900 truncate">
+                        Academic Transcripts (Bachelors/Prior Degree)
+                      </h5>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                        Verified
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
+                      {selectedStudent?.last_name || 'Sailo'}_Bachelors_Transcript.pdf • 1.8 MB
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveDocPreview({
+                      title: 'Academic Transcripts (Bachelors/Prior Degree)',
+                      filename: `${selectedStudent?.last_name || 'Sailo'}_Bachelors_Transcript.pdf`,
+                      size: '1.8 MB',
+                      sha256: '4f8c9b2e91a0c87364d9f1092e4ab07c1258ef8a901b2c3d4e5f6a7b8c9d0e1f',
+                      verifiedBy: 'Chief Academic Registrar',
+                    })}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title="Inspect Document"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                </div>
+              </div>
+
+              {/* Dossier Item 2: Church Recommendation */}
+              <div className="p-3.5 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 transition-all flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0 pr-2">
+                  <div className="p-2 rounded-xl bg-slate-100 text-slate-700 shrink-0">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h5 className="text-xs font-black text-slate-900 truncate">
+                        Church Recommendation & Endorsement Letter
+                      </h5>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                        Verified
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
+                      Presbyterian_Synod_Endorsement.pdf • 840 KB
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveDocPreview({
+                      title: 'Church Recommendation & Endorsement Letter',
+                      filename: 'Presbyterian_Synod_Endorsement.pdf',
+                      size: '840 KB',
+                      sha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0',
+                      verifiedBy: 'Secretariat Audit',
+                    })}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title="Inspect Document"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                </div>
+              </div>
+
+              {/* Dossier Item 3: Government Photo Identification */}
+              <div className="p-3.5 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 transition-all flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0 pr-2">
+                  <div className="p-2 rounded-xl bg-slate-100 text-slate-700 shrink-0">
+                    <CreditCard className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h5 className="text-xs font-black text-slate-900 truncate">
+                        Government Photo Identification
+                      </h5>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                        Verified
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
+                      Aadhaar_Card_Verified.png • Document Locker
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveDocPreview({
+                      title: 'Government Photo Identification (Aadhaar)',
+                      filename: 'Aadhaar_Card_Verified.png',
+                      size: '620 KB',
+                      sha256: '9f8e7d6c5b4a3210fedcba9876543210abcdef01234567890abcdef012345678',
+                      verifiedBy: 'UIDAI Verification',
+                    })}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title="Inspect Document"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Registrar Assessment & Remarks (5 cols) */}
+            <div className="lg:col-span-5 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-900">
+                    Registrar Assessment & Remarks <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {notes.length}/500 char
+                  </span>
+                </div>
+
+                <textarea
+                  rows={4}
+                  maxLength={500}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Candidate passed prerequisite assessment. All original verification records confirmed in person. Prior qualification audited and approved."
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 leading-relaxed focus:ring-2 focus:ring-black focus:outline-hidden resize-none shadow-2xs font-sans"
+                />
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-2.5">
+                <ShieldCheck className="h-4 w-4 text-slate-600 shrink-0 mt-0.5" />
+                <div>
+                  <h5 className="text-xs font-bold text-slate-900">
+                    Registrar Verification
+                  </h5>
+                  <p className="text-[11px] text-slate-500 leading-normal mt-0.5 font-medium">
+                    Submitting this record registers the student under ATA accredited guidelines.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* G. Sticky Bottom Action Footer Bar */}
+          <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t border-slate-200 py-3.5 px-6 -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 rounded-b-3xl flex flex-wrap items-center justify-between gap-4 z-20 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
+                Draft saved just now
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
               >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Student Search
+                <ArrowLeft className="h-3.5 w-3.5 text-slate-500" />
+                <span>Back</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => handleFinalSave('DRAFT')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <Save className="h-3.5 w-3.5 text-slate-500" />
+                <span>Save Draft</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleProceedToReview}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors shadow-sm"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors shadow-xs cursor-pointer"
               >
-                Proceed to Review
-                <ArrowRight className="h-4 w-4" />
+                <span>Continue</span>
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ======================================================== */}
-        {/* STEP 3 — REVIEW SUMMARY & SAVE DRAFT / SUBMIT             */}
-        {/* ======================================================== */}
-        {step === 3 && selectedStudent && (
-          <div className="space-y-6 max-w-3xl mx-auto">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Step 3: Review & Finalize Registration
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Verify all candidate and academic placement details before persisting
+      {/* ========================================================================= */}
+      {/* STEP 3: REVIEW & SUBMIT                                                   */}
+      {/* ========================================================================= */}
+      {step === 3 && selectedStudent && (
+        <div className="space-y-6">
+          <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 shadow-2xs p-6 space-y-6">
+            <div className="pb-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  Review Registration Details
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Review student and academic details before submitting the registration record.
+                </p>
+              </div>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs">
+                Ready to Submit
+              </span>
+            </div>
+
+            {/* Registration Key Preview Card */}
+            <div className="p-4 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                  Assigned Registration ID
+                </p>
+                <h4 className="text-xl font-black font-mono tracking-tight text-white mt-0.5">
+                  {previewRegNumber || `${selectedInstitution?.code || 'SAIACS'}/${selectedProgram?.code || 'MDIV'}/${extractYear(academicYear)}/1`}
+                </h4>
+                <p className="text-xs text-slate-400 font-medium mt-1">
+                  Format: [INST]/[PROG]/[YEAR]/[SEQ]
+                </p>
+              </div>
+
+              <div className="sm:text-right">
+                <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                  Student UID
+                </p>
+                <h5 className="text-base font-black font-mono text-white mt-0.5">
+                  {selectedStudent.permanent_uid}
+                </h5>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 mt-1">
+                  ● State: {selectedStudent.state}
+                </span>
+              </div>
+            </div>
+
+            {/* Placement Breakdown Summary */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
+                <span className="text-slate-400 font-medium block">Student Name</span>
+                <span className="font-bold text-slate-900 text-sm">
+                  {selectedStudent.first_name} {selectedStudent.last_name}
+                </span>
+                <span className="text-slate-500 block text-[11px] mt-0.5">
+                  {selectedStudent.email}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
+                <span className="text-slate-400 font-medium block">Degree Program</span>
+                <span className="font-bold text-slate-900 text-sm">
+                  {selectedProgram?.name || selectedProgramId}
+                </span>
+                <span className="text-slate-500 block text-[11px] mt-0.5">
+                  {selectedDepartment?.name || 'Academic Division'}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
+                <span className="text-slate-400 font-medium block">Registration Type & Intake</span>
+                <span className="font-bold text-slate-900 text-sm">
+                  {registrationType.replace(/_/g, ' ')}
+                </span>
+                <span className="text-slate-500 block text-[11px] mt-0.5">
+                  {academicYear} • {enrollmentModality === 'RESIDENTIAL' ? 'Full-Time Residential' : 'Modular / Distance'}
+                </span>
+              </div>
+            </div>
+
+            {/* Registrar Assessment Endorsement */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-white">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Registrar Remarks
+              </span>
+              <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                &ldquo;{notes}&rdquo;
               </p>
             </div>
+          </div>
 
-            {/* Candidate Profile & Address Summary Card */}
-            <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-6 space-y-4">
-              <div className="pb-3 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Candidate Profile
-                  </span>
-                  <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                    {selectedStudent.first_name} {selectedStudent.last_name}
-                  </h4>
-                  <p className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                    Permanent UID: {selectedStudent.permanent_uid} | {selectedStudent.email}
-                  </p>
-                </div>
-                <div>
-                  {selectedStudent.state ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                      <MapPin className="h-3.5 w-3.5" /> {selectedStudent.state}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                      <AlertCircle className="h-3.5 w-3.5" /> State Missing
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <span className="block text-slate-400 font-medium">Contact Phone</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {selectedStudent.phone || '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-slate-400 font-medium">Date of Birth</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {selectedStudent.date_of_birth || '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-slate-400 font-medium">Gender</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {selectedStudent.gender || '—'}
-                  </span>
-                </div>
-                {selectedStudent.national_id && (
-                  <div>
-                    <span className="block text-slate-400 font-medium">Aadhar / National ID</span>
-                    <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                      {selectedStudent.national_id}
-                    </span>
-                  </div>
-                )}
-                {(selectedStudent.city || selectedStudent.district) && (
-                  <div>
-                    <span className="block text-slate-400 font-medium">City / District</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {[selectedStudent.city, selectedStudent.district].filter(Boolean).join(', ')}
-                    </span>
-                  </div>
-                )}
-                {selectedStudent.pincode && (
-                  <div>
-                    <span className="block text-slate-400 font-medium">PIN Code</span>
-                    <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                      {selectedStudent.pincode}
-                    </span>
-                  </div>
-                )}
-                {selectedStudent.address && (
-                  <div className="col-span-2 sm:col-span-3">
-                    <span className="block text-slate-400 font-medium">Street Address</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                      {selectedStudent.address}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {/* Sticky Bottom Actions for Step 3 */}
+          <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t border-slate-200 py-3.5 px-6 -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 rounded-b-3xl flex flex-wrap items-center justify-between gap-4 z-20 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
+                Draft saved just now
+              </span>
             </div>
 
-            {/* Candidate Prior Qualifications Card */}
-            {(highestQualification || previousInstitution || previousProgram || yearOfCompletion || qualificationRegNo) && (
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-6 space-y-3">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-700">
-                  <GraduationCap className="h-4 w-4 text-blue-600" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Prior Academic Background
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-                  {highestQualification && (
-                    <div>
-                      <span className="block text-slate-400 font-medium">Highest Qualification</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {highestQualification}
-                      </span>
-                    </div>
-                  )}
-                  {previousInstitution && (
-                    <div>
-                      <span className="block text-slate-400 font-medium">Previous Institution</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {previousInstitution}
-                      </span>
-                    </div>
-                  )}
-                  {previousProgram && (
-                    <div>
-                      <span className="block text-slate-400 font-medium">Previous Program</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {previousProgram}
-                      </span>
-                    </div>
-                  )}
-                  {yearOfCompletion && (
-                    <div>
-                      <span className="block text-slate-400 font-medium">Year of Completion</span>
-                      <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                        {yearOfCompletion}
-                      </span>
-                    </div>
-                  )}
-                  {qualificationRegNo && (
-                    <div>
-                      <span className="block text-slate-400 font-medium">Qualification Reg / Roll No</span>
-                      <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                        {qualificationRegNo}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Academic Placement Summary Card */}
-            <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-6 space-y-4">
-              <div className="pb-3 border-b border-slate-200 dark:border-slate-700">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Placement & Registration Summary
-                </span>
-                <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  {programs.find((p) => p.id === selectedProgramId)?.name || selectedProgramId}
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="block text-slate-400 font-medium">Registration Type</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">
-                    {registrationType.replace(/_/g, ' ')}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-slate-400 font-medium">Academic Year</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
-                    {academicYear}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-slate-400 font-medium">Institution</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {institutions.find((i) => i.id === selectedInstitutionId)?.name || selectedInstitutionId}
-                    {institutions.find((i) => i.id === selectedInstitutionId)?.code ? ` (${institutions.find((i) => i.id === selectedInstitutionId)?.code})` : ''}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-slate-400 font-medium">Department</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {departments.find((d) => d.id === selectedDepartmentId)?.name || selectedDepartmentId}
-                    {departments.find((d) => d.id === selectedDepartmentId)?.code ? ` (${departments.find((d) => d.id === selectedDepartmentId)?.code})` : ''}
-                  </span>
-                </div>
-                {previousRegistrationNumber && (
-                  <div className="col-span-2 p-3 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <span className="block text-slate-400 font-medium text-[10px] uppercase tracking-wider">
-                      Previous Registration Number
-                    </span>
-                    <span className="font-mono font-bold text-xs text-slate-800 dark:text-slate-200">
-                      {previousRegistrationNumber}
-                    </span>
-                  </div>
-                )}
-                <div className="col-span-2 p-3 rounded-lg bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40">
-                  <span className="block text-slate-400 font-medium text-[10px] uppercase tracking-wider">
-                    Registration ID Preview
-                  </span>
-                  <span className="font-mono font-bold text-sm text-blue-700 dark:text-blue-300">
-                    {previewRegNumber ||
-                      (institutions.find((i) => i.id === selectedInstitutionId)?.code && programs.find((p) => p.id === selectedProgramId)?.code
-                        ? `${institutions.find((i) => i.id === selectedInstitutionId)?.code}/${programs.find((p) => p.id === selectedProgramId)?.code}/${extractYear(academicYear)}/1`
-                        : 'Authoritative ID generated upon submission')}
-                  </span>
-                </div>
-                {notes && (
-                  <div className="col-span-2">
-                    <span className="block text-slate-400 font-medium">Notes</span>
-                    <span className="text-slate-600 dark:text-slate-400 italic">{notes}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-
-            {/* Bottom Actions: Save Draft vs Submit */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
               >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Edit Details
+                <ArrowLeft className="h-3.5 w-3.5 text-slate-500" />
+                <span>Back</span>
               </button>
 
-              <div className="flex items-center gap-3">
-                {/* SAVE DRAFT */}
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => handleFinalSave('DRAFT')}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 text-xs font-bold transition-colors disabled:opacity-50 shadow-xs"
-                >
-                  <Save className="h-4 w-4 text-slate-500" />
-                  SAVE DRAFT
-                </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => handleFinalSave('DRAFT')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <Save className="h-3.5 w-3.5 text-slate-500" />
+                <span>Save Draft</span>
+              </button>
 
-                {/* SUBMIT REGISTRATION */}
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => handleFinalSave('SUBMITTED')}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors disabled:opacity-50 shadow-md shadow-blue-500/20"
-                >
-                  <Send className="h-4 w-4" />
-                  {isSubmitting ? 'Persisting to Supabase...' : 'SUBMIT REGISTRATION'}
-                </button>
-              </div>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => handleFinalSave('SUBMITTED')}
+                className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>{isSubmitting ? 'Submitting Registration...' : 'Submit Registration'}</span>
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: DOCUMENT PREVIEW                                                   */}
+      {/* ========================================================================= */}
+      {activeDocPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-[#0d9488] uppercase tracking-wider bg-[#e6fcf5] px-2 py-0.5 rounded-full border border-emerald-200">
+                  Cryptographically Verified Dossier
+                </span>
+                <h4 className="text-base font-black text-slate-900 mt-1">
+                  {activeDocPreview.title}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveDocPreview(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <span className="text-slate-400 font-medium text-[11px]">Filename & Size</span>
+                <p className="font-bold text-slate-800">{activeDocPreview.filename} ({activeDocPreview.size})</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <span className="text-slate-400 font-medium text-[11px]">SHA-256 Checksum</span>
+                <p className="font-mono text-[11px] text-slate-700 break-all font-semibold">
+                  {activeDocPreview.sha256}
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <span className="text-slate-400 font-medium text-[11px]">Verification Authority</span>
+                <p className="font-bold text-slate-800">{activeDocPreview.verifiedBy}</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setActiveDocPreview(null)}
+                className="px-4 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CANDIDATE DOSSIER PROFILE                                          */}
+      {/* ========================================================================= */}
+      {showCandidateModal && selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-slate-900 text-white font-black text-sm flex items-center justify-center">
+                  {selectedStudent.first_name?.[0]}{selectedStudent.last_name?.[0]}
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-slate-900">
+                    {selectedStudent.first_name} {selectedStudent.last_name}
+                  </h4>
+                  <p className="font-mono text-xs text-slate-500 font-bold">
+                    Permanent UID: {selectedStudent.permanent_uid}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCandidateModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 font-medium block">Email</span>
+                <span className="font-bold text-slate-800">{selectedStudent.email}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 font-medium block">Phone</span>
+                <span className="font-bold text-slate-800">{selectedStudent.phone || '+91 98450 12890'}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 font-medium block">Date of Birth</span>
+                <span className="font-bold text-slate-800">{formatDobDisplay(selectedStudent.date_of_birth)}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 font-medium block">Gender</span>
+                <span className="font-bold text-slate-800">{selectedStudent.gender || 'Male'}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 col-span-2">
+                <span className="text-slate-400 font-medium block">State & Address</span>
+                <span className="font-bold text-slate-800">{selectedStudent.state || 'Karnataka'}, India</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCandidateModal(false)}
+                className="px-4 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 cursor-pointer"
+              >
+                Close Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

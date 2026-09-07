@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { UserRole, Student, Registration } from '@/lib/types';
+import { UserRole, Student, Registration, AppNotification } from '@/lib/types';
 import { useAuth } from '@/lib/context/AuthContext';
-import { fetchStudents, fetchRegistrations } from '@/lib/api/supabase-service';
+// Protected search now goes through /api/search BFF route (session-scoped server-side)
+import { fetchUserNotifications, markNotificationRead, acknowledgeNotification } from '@/lib/api/notices-service';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import {
   Bell,
-  Settings,
   Search,
   Menu,
   X,
@@ -17,15 +17,18 @@ import {
   FileText,
   ArrowRight,
   GraduationCap,
-  CheckCircle2,
   Building2,
   ShieldCheck,
   Copy,
   Check,
+  BookOpen,
+  Mail,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface HeaderProps {
   currentRole: UserRole;
+  onRoleChange?: (role: UserRole) => void;
   title?: string;
   onToggleMobileSidebar?: () => void;
   onSelectRegistration?: (reg: Registration) => void;
@@ -33,6 +36,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
+  onRoleChange,
   title = 'Dashboard',
   onToggleMobileSidebar,
   onSelectRegistration,
@@ -40,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   const router = useRouter();
   const { user } = useAuth();
 
-  // Global Header Search States (isolated from in-page filters)
+  // Global Header Search States
   const [internalQuery, setInternalQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -50,10 +54,63 @@ export const Header: React.FC<HeaderProps> = ({
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const profileContainerRef = useRef<HTMLDivElement>(null);
+  const notificationContainerRef = useRef<HTMLDivElement>(null);
 
-  // Profile Modal State
+  // Profile Modal & Notification State
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // Load authoritative notifications for current user/role
+  const loadNotifications = async () => {
+    try {
+      const data = await fetchUserNotifications();
+      setNotifications(data);
+    } catch {
+      // Safe fallback
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [currentRole]);
+
+  const handleToggleNotifications = () => {
+    const next = !isNotificationsOpen;
+    setIsNotificationsOpen(next);
+    if (next) {
+      loadNotifications();
+    }
+  };
+
+  const handleNotificationClick = async (notif: AppNotification) => {
+    // 1. Optimistic read update
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+    );
+
+    // 2. Persist read state to backend
+    markNotificationRead(notif.key).catch(() => {});
+
+    // 3. For acknowledgement items (like AUDIT_LOG_SYNC), mark completed and remove
+    if (notif.action_type === 'AUDIT_LOG_SYNC') {
+      acknowledgeNotification(notif.key).catch(() => {});
+      setNotifications((prev) => prev.filter((n) => n.id !== notif.id));
+    }
+
+    // 4. Close popover
+    setIsNotificationsOpen(false);
+
+    // 5. Navigate to target URL
+    if (notif.target_url) {
+      router.push(notif.target_url);
+    }
+  };
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   // Click outside to close dropdowns
   useEffect(() => {
@@ -70,12 +127,19 @@ export const Header: React.FC<HeaderProps> = ({
       ) {
         setIsProfileOpen(false);
       }
+      if (
+        notificationContainerRef.current &&
+        !notificationContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsNotificationsOpen(false);
+      }
     };
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsProfileOpen(false);
         setIsDropdownOpen(false);
+        setIsNotificationsOpen(false);
       }
     };
 
@@ -103,38 +167,18 @@ export const Header: React.FC<HeaderProps> = ({
 
     const timer = setTimeout(async () => {
       try {
-        const q = trimmed.toLowerCase();
-
-        // Fetch students and registrations in parallel
-        const [students, registrations] = await Promise.all([
-          fetchStudents(trimmed).catch(() => [] as Student[]),
-          fetchRegistrations().catch(() => [] as Registration[]),
-        ]);
-
-        // Filter registrations
-        const filteredRegs = registrations.filter((r) => {
-          const stuName = r.student
-            ? `${r.student.first_name} ${r.student.last_name}`.toLowerCase()
-            : '';
-          const uid = (r.student?.permanent_uid || '').toLowerCase();
-          const email = (r.student?.email || '').toLowerCase();
-          const regNum = r.registration_number.toLowerCase();
-          const inst = (r.institution?.name || '').toLowerCase();
-          const prog = (r.program?.name || '').toLowerCase();
-
-          return (
-            stuName.includes(q) ||
-            uid.includes(q) ||
-            email.includes(q) ||
-            regNum.includes(q) ||
-            inst.includes(q) ||
-            prog.includes(q)
-          );
-        });
+        // Search goes through /api/search BFF — actor is built server-side from the session cookie.
+        // Institution scoping is enforced on the server, not from client state.
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(trimmed)}`,
+          { credentials: 'include' }
+        );
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
 
         startTransition(() => {
-          setStudentResults(students.slice(0, 5));
-          setRegistrationResults(filteredRegs.slice(0, 5));
+          setStudentResults((data.students || []).slice(0, 5));
+          setRegistrationResults((data.registrations || []).slice(0, 5));
           setIsSearching(false);
         });
       } catch (err) {
@@ -144,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({
     }, 180);
 
     return () => clearTimeout(timer);
-  }, [internalQuery]);
+  }, [internalQuery, user]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInternalQuery(e.target.value);
@@ -157,13 +201,21 @@ export const Header: React.FC<HeaderProps> = ({
     setIsDropdownOpen(false);
   };
 
-  const handleSelectStudent = (student: Student) => {
-    setIsDropdownOpen(false);
-    router.push(`/students?id=${student.id}`);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setIsDropdownOpen(false);
+    }
   };
 
-  const handleSelectReg = (reg: Registration) => {
+  const handleSelectStudent = (student: Student) => {
     setIsDropdownOpen(false);
+    setInternalQuery('');
+    router.push(`/students?query=${encodeURIComponent(student.permanent_uid || student.first_name)}`);
+  };
+
+  const handleSelectRegistration = (reg: Registration) => {
+    setIsDropdownOpen(false);
+    setInternalQuery('');
     if (onSelectRegistration) {
       onSelectRegistration(reg);
     } else {
@@ -171,72 +223,40 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      setIsDropdownOpen(false);
-    } else if (e.key === 'Enter') {
-      if (studentResults.length > 0) {
-        handleSelectStudent(studentResults[0]);
-      } else if (registrationResults.length > 0) {
-        handleSelectReg(registrationResults[0]);
-      }
-    }
-  };
-
-  const roleLabelMap: Record<UserRole, string> = {
-    UNIVERSAL: 'Universal Access (Read-only)',
-    ADMINISTRATOR: 'Role: Administrator',
-    REGISTRAR: 'ROLE: REGISTRAR',
-  };
-
-  const displayName =
-    user?.full_name ||
-    (currentRole === 'ADMINISTRATOR'
-      ? 'System Admin'
-      : currentRole === 'UNIVERSAL'
-      ? 'Auditor User'
-      : 'Eleanor Vance');
-
-  const displayEmail =
-    user?.email ||
-    (currentRole === 'ADMINISTRATOR'
-      ? 'admin@ataportal.edu'
-      : currentRole === 'UNIVERSAL'
-      ? 'auditor@ataportal.edu'
-      : 'registrar@ataportal.edu');
+  // User Profile details
+  const displayName = user?.full_name || 'Dr. Grace Chen';
+  const roleDisplayTitle = {
+    REGISTRAR: 'Chief Academic Registrar',
+    ADMINISTRATOR: 'System Administrator',
+    UNIVERSAL: 'Universal Registrar',
+  }[currentRole];
 
   const profileDetails = {
     REGISTRAR: {
-      roleTitle: 'ATA Registrar',
-      roleBadge: 'ATA REGISTRAR',
-      institution: 'New India Bible Seminary (NIBS)',
-      institutionCode: 'NIBS',
-      department: 'Academic Administration & Admissions',
-      jurisdiction: 'Candidate Registration & Lifetime Student Dossiers',
-      registrarId: 'REG-ATA-2026-084',
-      accessClearance: 'Full Write • Batch Import • Candidate Issuance',
+      title: 'Chief Academic Registrar',
+      department: 'Office of Academic Affairs & Admissions',
+      institution: 'Asia Theological Association',
+      registrarId: 'REG-ATA-2026-08',
+      accessLevel: 'Registrar Level 2',
+      authorizedScope: 'Candidate Intake & Enrollment Management',
       authMethod: 'Two-Factor Auth (2FA) Active',
     },
     ADMINISTRATOR: {
-      roleTitle: 'ATA Administrator',
-      roleBadge: 'CENTRAL ADMINISTRATOR',
-      institution: 'Asia Theological Association Secretariat',
-      institutionCode: 'ATA-HQ',
-      department: 'Executive Governance & Accreditation',
-      jurisdiction: 'System Administration & Registrar Governance',
-      registrarId: 'ADM-ATA-2026-001',
-      accessClearance: 'Full System Control • Security Clearance',
-      authMethod: 'Hardware 2FA Active • Enterprise SSO',
+      title: 'Chief Academic Administrator / Council Director',
+      department: 'Executive Governance Council & Accreditation Board',
+      institution: 'Asia Theological Association',
+      registrarId: 'ADM-ATA-2026-01',
+      accessLevel: 'Tier 1 Administrative & Audit Authority',
+      authorizedScope: 'Governance, Record Unlocks & Security',
+      authMethod: 'Two-Factor Auth (2FA) Active',
     },
     UNIVERSAL: {
-      roleTitle: 'Universal Auditor',
-      roleBadge: 'UNIVERSAL AUDITOR',
-      institution: 'Asia Theological Association Secretariat',
-      institutionCode: 'ATA-ACCR',
-      department: 'Academic Standards & Quality Assurance',
-      jurisdiction: 'Read-Only Audit & Accreditation Review',
-      registrarId: 'AUD-ATA-2026-012',
-      accessClearance: 'Universal Read-Only • Historical Archives',
+      title: 'Universal Registry Controller',
+      department: 'Executive Governance Council',
+      institution: 'Asia Theological Association',
+      registrarId: 'UNI-ATA-2026-99',
+      accessLevel: 'Unrestricted Universal Master Access',
+      authorizedScope: 'All Institutions, Degrees & Audit Logs',
       authMethod: 'Two-Factor Auth (2FA) Active',
     },
   }[currentRole];
@@ -251,60 +271,87 @@ export const Header: React.FC<HeaderProps> = ({
   const totalResultsCount = studentResults.length + registrationResults.length;
 
   return (
-    <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/80 px-3 sm:px-6 flex items-center justify-between shadow-2xs shrink-0">
-      {/* Left Group: Mobile Menu + Title + Role Badge */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-        {/* Mobile menu trigger */}
-        <button
-          onClick={onToggleMobileSidebar}
-          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
-          aria-label="Toggle Navigation"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+    <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/90 flex items-center shadow-2xs shrink-0">
+      {/* Left Section: Brand & ATA Registry (aligns with 64-width Sidebar on desktop) */}
+      <div className="w-full lg:w-64 h-full px-4 flex items-center justify-between lg:border-r lg:border-slate-200/90 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Mobile menu hamburger */}
+          <button
+            onClick={onToggleMobileSidebar}
+            className="lg:hidden p-1.5 -ml-1 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
+            aria-label="Toggle Navigation"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
 
-        {/* Page Title */}
-        <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight leading-none truncate">
-          {title}
-        </h1>
+          {/* Book Icon in Dark Rounded Square */}
+          <div className="h-9 w-9 rounded-xl bg-[#0f172a] text-[#2dd4bf] flex items-center justify-center shrink-0 shadow-2xs">
+            <BookOpen className="h-4 w-4 stroke-[2.2]" />
+          </div>
 
-        {/* Role Pill Badge */}
-        <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-[10px] font-semibold text-slate-600 tracking-tight shrink-0">
-          {roleLabelMap[currentRole]}
-        </span>
+          {/* ATA PORTAL Title & Subtitle */}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 leading-none">
+              <span className="font-black text-slate-900 tracking-tight text-xs">ATA</span>
+              <span className="font-extrabold text-[#0d9488] tracking-tight text-xs">PORTAL</span>
+            </div>
+            <span className="text-[8.5px] text-slate-400 font-medium tracking-tight block mt-0.5 truncate leading-none">
+              Asia Theological Association
+            </span>
+          </div>
+        </div>
+
+        {/* ATA Registry / Executive Governance Sub-header */}
+        <div className="hidden sm:flex flex-col text-right pl-2 shrink-0">
+          {currentRole === 'ADMINISTRATOR' ? (
+            <div className="flex flex-col text-right leading-none">
+              <span className="font-extrabold text-[11px] text-[#006f67] tracking-tight uppercase">
+                EXECUTIVE
+              </span>
+              <span className="text-[10px] font-black text-[#006f67] tracking-tight uppercase mt-0.5">
+                GOVERNANCE
+              </span>
+            </div>
+          ) : (
+            <>
+              <span className="font-bold text-[11px] text-slate-900 leading-tight">
+                ATA Registry
+              </span>
+              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
+                THEOLOGICAL COUNCIL
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Right Group: Search Input + Action Icons + Profile Avatar */}
-      <div className="flex items-center gap-3">
-        {/* Global Search Input & Dropdown Container */}
-        <div ref={searchContainerRef} className="relative hidden md:block w-72 lg:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={internalQuery}
-            onChange={handleInputChange}
-            onFocus={() => {
-              if (internalQuery.trim().length > 0) {
-                setIsDropdownOpen(true);
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Global search (candidates, regs)..."
-            className="w-full rounded-full border border-slate-200 bg-slate-50/80 pl-9 pr-8 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          />
-
-          {/* Right Action inside input: Spinner or Clear Button */}
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
+      {/* Right Section: Search Bar + Role Switcher Pills + Notification Bell + User Profile */}
+      <div className="flex-1 h-full px-3 sm:px-5 flex items-center justify-between gap-3 min-w-0">
+        {/* Search Bar Container */}
+        <div ref={searchContainerRef} className="relative flex-1 max-w-md lg:max-w-lg min-w-0">
+          <div className="relative flex items-center">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={internalQuery}
+              onChange={handleInputChange}
+              onFocus={() => {
+                if (internalQuery.trim().length > 0) setIsDropdownOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Search student name, roll number, ATA ID, degree..."
+              className="w-full rounded-2xl border border-transparent bg-[#eff4ff] pl-10 pr-8 py-2 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:bg-white focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+            />
             {isSearching ? (
-              <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-500 animate-spin" />
             ) : internalQuery ? (
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-0.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
                 title="Clear search"
               >
-                <X className="h-3 w-3" />
+                <X className="h-3.5 w-3.5" />
               </button>
             ) : null}
           </div>
@@ -326,7 +373,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               {/* Scrollable Results List */}
-              <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-50 p-1">
+              <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-50 p-1">
                 {isSearching && totalResultsCount === 0 ? (
                   <div className="p-8 text-center space-y-2">
                     <Loader2 className="h-6 w-6 text-blue-600 animate-spin mx-auto" />
@@ -335,11 +382,9 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : totalResultsCount === 0 ? (
                   <div className="p-8 text-center space-y-1.5">
                     <Search className="h-6 w-6 text-slate-300 mx-auto" />
-                    <p className="text-xs font-bold text-slate-800">
-                      No matching records found
-                    </p>
+                    <p className="text-xs font-bold text-slate-800">No matching records found</p>
                     <p className="text-[11px] text-slate-400">
-                      Try searching by student name, UID (e.g. STU-...), or registration #
+                      Try searching by candidate name, UID (e.g. STU-...), or registration #
                     </p>
                   </div>
                 ) : (
@@ -358,26 +403,20 @@ export const Header: React.FC<HeaderProps> = ({
                             className="px-3 py-2 rounded-xl hover:bg-blue-50/60 cursor-pointer flex items-center justify-between gap-3 group transition-colors"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                              <div className="h-8 w-8 rounded-full bg-blue-100/70 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
                                 {st.first_name[0]}
-                                {st.last_name[0]}
+                                {st.last_name ? st.last_name[0] : ''}
                               </div>
                               <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
-                                    {st.first_name} {st.last_name}
-                                  </h4>
-                                  <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                                    {st.permanent_uid}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-slate-500 truncate">{st.email}</p>
+                                <p className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                                  {st.first_name} {st.last_name}
+                                </p>
+                                <p className="text-[10px] font-mono text-slate-400">
+                                  {st.permanent_uid || 'No UID'} &bull; {st.email}
+                                </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                              <span>View Profile</span>
-                              <ArrowRight className="h-3 w-3" />
-                            </div>
+                            <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-blue-600 transition-colors shrink-0" />
                           </div>
                         ))}
                       </div>
@@ -393,16 +432,16 @@ export const Header: React.FC<HeaderProps> = ({
                         {registrationResults.map((reg) => (
                           <div
                             key={reg.id}
-                            onClick={() => handleSelectReg(reg)}
-                            className="px-3 py-2 rounded-xl hover:bg-blue-50/60 cursor-pointer flex items-center justify-between gap-3 group transition-colors"
+                            onClick={() => handleSelectRegistration(reg)}
+                            className="px-3 py-2 rounded-xl hover:bg-indigo-50/60 cursor-pointer flex items-center justify-between gap-3 group transition-colors"
                           >
-                            <div className="flex items-start gap-2.5 min-w-0">
-                              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0 mt-0.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
                                 <FileText className="h-4 w-4" />
                               </div>
-                              <div className="min-w-0 space-y-0.5">
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono font-bold text-xs text-slate-900 group-hover:text-blue-600 transition-colors">
+                                  <span className="font-mono font-bold text-xs text-slate-900 group-hover:text-indigo-600 transition-colors">
                                     {reg.registration_number}
                                   </span>
                                   <StatusBadge status={reg.status} size="sm" />
@@ -412,16 +451,9 @@ export const Header: React.FC<HeaderProps> = ({
                                     ? `${reg.student.first_name} ${reg.student.last_name}`
                                     : 'Student Record'}
                                 </p>
-                                <p className="text-[10px] text-slate-400 truncate">
-                                  {reg.institution?.name || 'Institution'} &bull;{' '}
-                                  {reg.academic_year}
-                                </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                              <span>Details</span>
-                              <ArrowRight className="h-3 w-3" />
-                            </div>
+                            <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-indigo-600 transition-colors shrink-0" />
                           </div>
                         ))}
                       </div>
@@ -429,217 +461,190 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 )}
               </div>
-
-              {/* Dropdown Footer */}
-              <div className="px-4 py-2 bg-slate-50/60 flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                <span>Press <kbd className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[9px] text-slate-700">Esc</kbd> to close</span>
-                <span>Click any record to inspect</span>
-              </div>
             </div>
           )}
         </div>
 
-        {/* Bell Icon with red badge */}
-        <button className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100 transition-colors">
-          <Bell className="h-4 w-4" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
-        </button>
+        {/* Right Action Icons: Notification Bell + User Profile */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Notification Bell with dynamic badge */}
+          <div ref={notificationContainerRef} className="relative">
+            <button
+              type="button"
+              onClick={handleToggleNotifications}
+              className="relative p-2 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
 
-        {/* Settings Gear Icon */}
-        <button className="p-2 rounded-full text-slate-500 hover:bg-slate-100 transition-colors">
-          <Settings className="h-4 w-4" />
-        </button>
-
-        {/* Profile Avatar & Interactive Details Trigger */}
-        <div ref={profileContainerRef} className="relative pl-1">
-          <button
-            type="button"
-            onClick={() => setIsProfileOpen((prev) => !prev)}
-            className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 cursor-pointer text-left"
-            aria-expanded={isProfileOpen}
-            aria-label="View user profile details"
-          >
-            <div className="hidden sm:block text-right">
-              <span className="block text-xs font-bold text-slate-900 leading-tight">
-                {displayName}
-              </span>
-              <span className="block text-[10px] text-slate-400 font-medium font-mono">
-                {displayEmail}
-              </span>
-            </div>
-
-            <div className="relative h-8 w-8 rounded-full border border-slate-200 p-0.5 overflow-visible bg-slate-100 shrink-0">
-              <img
-                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80"
-                alt="User profile"
-                className="h-full w-full rounded-full object-cover"
-              />
-              <span
-                className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
-                title="Online & Active"
-              />
-            </div>
-          </button>
-
-          {/* Profile Details Floating Card Popover */}
-          {isProfileOpen && (
-            <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              {/* Header Banner */}
-              <div className="bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 p-4 text-white relative">
-                <button
-                  type="button"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Close profile card"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-
-                <div className="flex items-center gap-3">
-                  <div className="relative h-12 w-12 rounded-full border-2 border-white/20 p-0.5 shrink-0">
-                    <img
-                      src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&h=160&q=80"
-                      alt="User avatar"
-                      className="h-full w-full rounded-full object-cover"
-                    />
-                    <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-slate-900" />
+            {/* Notifications Popover */}
+            {isNotificationsOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150 divide-y divide-slate-100">
+                <div className="p-3.5 bg-slate-50 flex items-center justify-between border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-[#006f67]" />
+                    <h4 className="text-xs font-bold text-slate-900">Notifications</h4>
                   </div>
-
-                  <div className="min-w-0 pr-6">
-                    <h3 className="text-sm font-bold text-white truncate leading-snug">
-                      {displayName}
-                    </h3>
-                    <p className="text-[11px] text-blue-200 font-mono truncate">
-                      {displayEmail}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/20 border border-blue-400/30 text-[10px] font-bold text-blue-200 tracking-wider">
-                        {profileDetails.roleBadge}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-300 font-medium">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                        ATA Accredited
-                      </span>
+                  {unreadCount > 0 ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      {unreadCount} New
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                      All caught up
+                    </span>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto p-2.5 space-y-1.5 text-xs text-slate-600">
+                  {notifications.length > 0 ? (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={`p-3 rounded-xl transition-all cursor-pointer border ${
+                          !notif.is_read
+                            ? 'bg-teal-50/60 border-teal-100/80 hover:bg-teal-50'
+                            : 'bg-white border-transparent hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            {!notif.is_read ? (
+                              <span className="h-2 w-2 rounded-full bg-[#006f67] mt-1.5 shrink-0" />
+                            ) : (
+                              <span className="h-2 w-2 rounded-full bg-slate-200 mt-1.5 shrink-0" />
+                            )}
+                            <div>
+                              <p className="font-bold text-slate-900 text-xs">{notif.title}</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                {notif.message}
+                              </p>
+                            </div>
+                          </div>
+                          <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center text-xs text-slate-500 space-y-1.5">
+                      <Check className="h-6 w-6 text-emerald-600 mx-auto" />
+                      <p className="font-bold text-slate-900">All tasks completed</p>
+                      <p className="text-[11px] text-slate-400">
+                        No active items requiring your attention right now.
+                      </p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Body Content */}
-              <div className="p-4 space-y-3.5 max-h-[calc(100vh-180px)] overflow-y-auto">
-                {/* Institutional Placement Section */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Institutional Placement</span>
-                  </div>
+          {/* User Profile Avatar & Interactive Details Trigger */}
+          <div ref={profileContainerRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setIsProfileOpen((prev) => !prev)}
+              className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-slate-100/70 transition-colors cursor-pointer text-left"
+              aria-expanded={isProfileOpen}
+              aria-label="View user profile details"
+            >
+              <div className="hidden sm:block text-right leading-tight">
+                <span className="block text-xs font-bold text-slate-900 truncate max-w-[130px]">
+                  {displayName}
+                </span>
+                <span className="block text-[10px] font-semibold text-[#0d9488] leading-none mt-0.5">
+                  {roleDisplayTitle}
+                </span>
+              </div>
 
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-[11px] font-medium text-slate-500 shrink-0">Institution:</span>
-                      <span className="text-[11px] font-bold text-slate-900 text-right">
-                        {profileDetails.institution}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="text-[11px] font-medium text-slate-500">Institution Code:</span>
-                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700">
-                        {profileDetails.institutionCode}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="text-[11px] font-medium text-slate-500">Department:</span>
-                      <span className="text-[11px] font-semibold text-slate-800 text-right">
-                        {profileDetails.department}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-start gap-2 pt-1.5 border-t border-slate-200/60">
-                      <span className="text-[10px] font-medium text-slate-500 shrink-0">Jurisdiction:</span>
-                      <span className="text-[10px] text-slate-600 text-right font-medium">
-                        {profileDetails.jurisdiction}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="relative h-9 w-9 rounded-full overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+                <img
+                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=160&h=160&q=80"
+                  alt={displayName}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            </button>
 
-                {/* Account & Security Credentials Section */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
-                    <span>Account & Security Credentials</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="text-[11px] font-medium text-slate-500">Registrar ID:</span>
-                      <div className="flex items-center gap-1">
-                        <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          {profileDetails.registrarId}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleCopyId}
-                          title="Copy Registrar ID"
-                          className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-slate-200/80 transition-colors cursor-pointer"
-                        >
-                          {copiedId ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-[11px] font-medium text-slate-500 shrink-0">Access Clearance:</span>
-                      <span className="text-[10px] font-semibold text-slate-800 text-right">
-                        {profileDetails.accessClearance}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="text-[11px] font-medium text-slate-500">Authentication:</span>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                        {profileDetails.authMethod}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-slate-200/60">
-                      <span className="text-[10px] font-medium text-slate-500">Current Session:</span>
-                      <span className="text-[10px] font-medium text-slate-600 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
-                        Active &bull; SSL Secured
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Action Button */}
-                <div className="pt-0.5">
+            {/* Profile Popover Modal */}
+            {isProfileOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                {/* Header Banner */}
+                <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-4 text-white relative">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      router.push('/audit-logs');
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                    onClick={() => setIsProfileOpen(false)}
+                    className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Close profile card"
                   >
-                    <FileText className="h-3.5 w-3.5 text-slate-500" />
-                    <span>View My Audit Logs</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400 ml-auto" />
+                    <X className="h-4 w-4" />
                   </button>
+
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-12 w-12 rounded-full border-2 border-white/20 p-0.5 shrink-0 overflow-hidden">
+                      <img
+                        src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=160&h=160&q=80"
+                        alt={displayName}
+                        className="h-full w-full rounded-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-bold truncate">{displayName}</h4>
+                      <p className="text-xs text-blue-200 font-medium truncate">
+                        {profileDetails.title}
+                      </p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                        {currentRole}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Body Details */}
+                <div className="p-4 space-y-3 text-xs">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400">Registrar ID</p>
+                      <p className="font-mono font-bold text-slate-800">{profileDetails.registrarId}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyId}
+                      className="p-1.5 rounded-lg text-slate-500 hover:bg-white hover:text-blue-600 transition-colors"
+                      title="Copy ID"
+                    >
+                      {copiedId ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{profileDetails.institution}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <span className="truncate">{profileDetails.accessLevel}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{user?.email || 'registrar@ataportal.edu'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <span className="truncate">Account Active</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Footer */}
-              <div className="px-4 py-2 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                <span>Asia Theological Association</span>
-                <span>Press <kbd className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[9px] text-slate-700">Esc</kbd> to close</span>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </header>

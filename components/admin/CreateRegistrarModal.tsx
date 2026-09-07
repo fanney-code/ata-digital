@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/context/AuthContext';
-import { UserCheck, X, CheckCircle2 } from 'lucide-react';
+import { fetchInstitutions } from '@/lib/api/supabase-service';
+import { Institution } from '@/lib/types';
+import { UserCheck, X, CheckCircle2, Building2 } from 'lucide-react';
 
 interface CreateRegistrarModalProps {
   isOpen: boolean;
@@ -16,8 +18,23 @@ export const CreateRegistrarModal: React.FC<CreateRegistrarModalProps> = ({
   const { createRegistrar } = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchInstitutions()
+        .then((insts) => {
+          setInstitutions(insts);
+          if (insts.length > 0 && !selectedInstitutionId) {
+            setSelectedInstitutionId(insts[0].id);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -28,7 +45,7 @@ export const CreateRegistrarModal: React.FC<CreateRegistrarModalProps> = ({
     setIsSubmitting(true);
     setMessage('');
     try {
-      await createRegistrar(email.trim(), fullName.trim());
+      await createRegistrar(email.trim(), fullName.trim(), selectedInstitutionId || undefined);
       setMessage(`Registrar account '${fullName}' successfully defined in Supabase!`);
       setFullName('');
       setEmail('');
@@ -70,8 +87,7 @@ export const CreateRegistrarModal: React.FC<CreateRegistrarModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <p className="text-xs text-slate-500">
-            Administrators can define official Registrar accounts. Registered profiles are saved to Supabase with the{' '}
-            <span className="font-semibold text-blue-600">REGISTRAR</span> role.
+            Administrators can define official Registrar accounts and assign their authoritative institution.
           </p>
 
           <div>
@@ -83,7 +99,7 @@ export const CreateRegistrarModal: React.FC<CreateRegistrarModalProps> = ({
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="e.g. Eleanor Vance"
+              placeholder="e.g. Rev. M. Thomas"
               className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />
           </div>
@@ -97,9 +113,30 @@ export const CreateRegistrarModal: React.FC<CreateRegistrarModalProps> = ({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. eleanor.vance@ataportal.edu"
+              placeholder="e.g. m.thomas@saiacs.org"
               className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Assigned Institution <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <select
+                value={selectedInstitutionId}
+                onChange={(e) => setSelectedInstitutionId(e.target.value)}
+                required
+                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden appearance-none"
+              >
+                {institutions.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {inst.name} ({inst.code})
+                  </option>
+                ))}
+              </select>
+              <Building2 className="absolute right-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">

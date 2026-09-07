@@ -7,6 +7,7 @@ import {
   WorkflowStatus,
   RegistrationType,
   DashboardMetrics,
+  ActorContext,
 } from '../types';
 import {
   extractYear,
@@ -10880,6 +10881,89 @@ export const INITIAL_PROGRAMS: Program[] = [
 
 export const INITIAL_STUDENTS: Student[] = [
   {
+    id: 'd0100000-0000-0000-0000-000000000001',
+    permanent_uid: 'STU-2021-00314',
+    first_name: 'Rev. David Immanuel',
+    last_name: 'Sangma',
+    email: 'd.sangma@saiacs.org',
+    phone: '+91 97741 02938',
+    date_of_birth: '1992-06-15',
+    gender: 'Male',
+    national_id: '511122223333',
+    aadhar_number: '511122223333',
+    state: 'Karnataka',
+    address: 'SAIACS Campus, 363 Doddagubbi Cross',
+    city: 'Bengaluru',
+    district: 'Bengaluru Urban',
+    pincode: '560077',
+    country: 'India',
+    created_at: '2021-08-10T10:00:00Z',
+  },
+  {
+    id: 'd0100000-0000-0000-0000-000000000002',
+    permanent_uid: 'STU-2022-00894',
+    first_name: 'Deborah',
+    last_name: 'Lalthanzami',
+    email: 'deborah.l@aics.edu.in',
+    phone: '+91 98623 45120',
+    date_of_birth: '1998-04-12',
+    gender: 'Female',
+    national_id: '522233334444',
+    aadhar_number: '522233334444',
+    state: 'Mizoram',
+    city: 'Aizawl',
+    country: 'India',
+    created_at: '2022-07-15T11:00:00Z',
+  },
+  {
+    id: 'd0100000-0000-0000-0000-000000000003',
+    permanent_uid: 'STU-2020-00419',
+    first_name: 'Samuel K.',
+    last_name: 'Marak',
+    email: 'samuel.marak@ubs.edu.in',
+    phone: '+91 94230 11223',
+    date_of_birth: '1995-09-20',
+    gender: 'Male',
+    national_id: '533344445555',
+    aadhar_number: '533344445555',
+    state: 'Maharashtra',
+    city: 'Pune',
+    country: 'India',
+    created_at: '2020-06-10T09:00:00Z',
+  },
+  {
+    id: 'd0100000-0000-0000-0000-000000000004',
+    permanent_uid: 'STU-2023-01182',
+    first_name: 'Priya',
+    last_name: 'Sharma',
+    email: 'priya.sharma@cotr.edu.in',
+    phone: '+91 98480 33445',
+    date_of_birth: '2000-01-15',
+    gender: 'Female',
+    national_id: '544455556666',
+    aadhar_number: '544455556666',
+    state: 'Andhra Pradesh',
+    city: 'Visakhapatnam',
+    country: 'India',
+    created_at: '2023-08-01T12:00:00Z',
+  },
+  {
+    id: 'd0100000-0000-0000-0000-000000000005',
+    permanent_uid: 'STU-2024-00612',
+    first_name: 'Keviseno',
+    last_name: 'Angami',
+    email: 'keviseno.angami@clte.edu.in',
+    phone: '+91 94360 55667',
+    date_of_birth: '1999-07-28',
+    gender: 'Female',
+    national_id: '555566667777',
+    aadhar_number: '555566667777',
+    state: 'Nagaland',
+    city: 'Dimapur',
+    country: 'India',
+    created_at: '2024-05-18T14:30:00Z',
+  },
+  {
     id: 'b1111111-1111-1111-1111-111111111111',
     permanent_uid: 'STU-2026-00421',
     first_name: 'Sophia',
@@ -10982,6 +11066,48 @@ export const INITIAL_STUDENTS: Student[] = [
 ];
 
 export const INITIAL_REGISTRATIONS: Registration[] = [
+  {
+    id: 'e0100000-0000-0000-0000-000000000001',
+    registration_number: 'SAIACS/BA/2026/1',
+    student_id: 'd0100000-0000-0000-0000-000000000001',
+    registration_type: 'PROGRAM_PROGRESSION',
+    institution_id: '22222222-2222-2222-2222-222222222222',
+    department_id: 'd3333333-3333-3333-3333-333333333333',
+    program_id: 'a5555555-5555-5555-5555-555555555555',
+    academic_year: '2026-2027',
+    status: 'APPROVED',
+    notes: 'Doctor of Philosophy (Ph.D) in Intercultural Studies & Missiology • Research: Tribal Eootheology and Indigenous Missional Ecclesiology in Northeast India (1947–2020)',
+    created_at: '2024-08-10T09:00:00Z',
+    updated_at: '2026-01-15T11:00:00Z',
+  },
+  {
+    id: 'e0100000-0000-0000-0000-000000000002',
+    registration_number: 'SAIACS/BA-CM/2023/1',
+    student_id: 'd0100000-0000-0000-0000-000000000001',
+    registration_type: 'RE_REGISTRATION',
+    institution_id: '22222222-2222-2222-2222-222222222222',
+    department_id: 'd3333333-3333-3333-3333-333333333333',
+    program_id: 'a4444444-4444-4444-4444-444444444444',
+    academic_year: '2023-2025',
+    status: 'APPROVED',
+    notes: 'Master of Theology (M.Th) in World Religions • Conferred with Distinction • Final CGPA: 3.86 / 4.00 • Defended Thesis: Hermeneutics of Hospitality in Post-Colonial Tribal Settlements',
+    created_at: '2023-07-20T08:30:00Z',
+    updated_at: '2025-05-15T10:00:00Z',
+  },
+  {
+    id: 'e0100000-0000-0000-0000-000000000003',
+    registration_number: 'UBS/BA/2020/1',
+    student_id: 'd0100000-0000-0000-0000-000000000001',
+    registration_type: 'TRANSFER',
+    institution_id: '33333333-3333-3333-3333-333333333333',
+    department_id: 'd4444444-4444-4444-4444-444444444444',
+    program_id: 'a3333333-3333-3333-3333-333333333333',
+    academic_year: '2020-2023',
+    status: 'APPROVED',
+    notes: 'Master of Divinity (M.Div) • Transferred Credits to SAIACS Track • Transfer Verification: 90 Credit Hours transferred & validated under ATA Council Inter-Institutional Exchange Resolution #619',
+    created_at: '2020-06-15T09:00:00Z',
+    updated_at: '2023-04-20T14:00:00Z',
+  },
   {
     id: 'd29d203a-0ac9-4d9a-8330-146c40036cf2',
     registration_number: 'NIBS/BTH/2026/3',
@@ -11843,16 +11969,36 @@ class LocalFallbackStore {
     return INITIAL_PROGRAMS;
   }
 
-  getStudents(): Student[] {
+  getStudents(actor?: ActorContext): Student[] {
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId) return [];
+      const instRegs = this.registrations.filter((r) => r.institution_id === actor.institutionId);
+      const validStudentIds = new Set(instRegs.map((r) => r.student_id));
+      return this.students.filter((s) => validStudentIds.has(s.id));
+    }
     return [...this.students];
   }
 
-  searchStudents(query: string): Student[] {
+  getStudentById(idOrUid: string, actor?: ActorContext): Student | null {
+    const s = this.students.find((stu) => stu.id === idOrUid || stu.permanent_uid === idOrUid);
+    if (!s) return null;
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId) return null;
+      const hasRegInInst = this.registrations.some(
+        (r) => r.student_id === s.id && r.institution_id === actor.institutionId
+      );
+      if (!hasRegInInst) return null;
+    }
+    return s;
+  }
+
+  searchStudents(query: string, actor?: ActorContext): Student[] {
     const q = query.toLowerCase().trim();
-    if (!q) return this.getStudents();
+    const studentsList = this.getStudents(actor);
+    if (!q) return studentsList;
     const normQ = normalizeAadhar(query);
 
-    return this.students.filter(
+    return studentsList.filter(
       (s) => {
         const matchesStandard =
           s.permanent_uid.toLowerCase().includes(q) ||
@@ -11884,8 +12030,16 @@ class LocalFallbackStore {
     data: Omit<Student, 'id' | 'created_at' | 'updated_at' | 'permanent_uid'> & {
       permanent_uid?: string;
     },
-    intakeYear?: number
+    intakeYear?: number,
+    actor?: ActorContext
   ): Student {
+    if (actor?.role === 'ADMINISTRATOR') {
+      throw new Error('403 Forbidden: Administrators cannot create student records.');
+    }
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only and cannot create students.');
+    }
+
     if (!data.first_name || !data.first_name.trim()) throw new Error('First Name is required');
     if (!data.last_name || !data.last_name.trim()) throw new Error('Last Name is required');
     if (!data.email || !data.email.trim()) throw new Error('Email Address is required');
@@ -11948,7 +12102,14 @@ class LocalFallbackStore {
     return newStudent;
   }
 
-  updateStudent(id: string, updates: Partial<Student>): Student {
+  updateStudent(id: string, updates: Partial<Student>, actor?: ActorContext): Student {
+    if (actor?.role === 'ADMINISTRATOR') {
+      throw new Error('403 Forbidden: Administrators cannot edit student profiles.');
+    }
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only.');
+    }
+
     const idx = this.students.findIndex((s) => s.id === id || s.permanent_uid === id);
     if (idx === -1) throw new Error('Student not found');
 
@@ -11968,15 +12129,25 @@ class LocalFallbackStore {
     return updated;
   }
 
-  getRegistrations(): Registration[] {
-    return this.registrations.map((r) =>
+  getRegistrations(actor?: ActorContext): Registration[] {
+    let list = this.registrations;
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId) return [];
+      list = list.filter((r) => r.institution_id === actor.institutionId);
+    }
+    return list.map((r) =>
       hydrateRegistration(r, this.students, INITIAL_INSTITUTIONS, INITIAL_DEPARTMENTS, INITIAL_PROGRAMS)
     );
   }
 
-  getRegistrationById(id: string): Registration | null {
+  getRegistrationById(id: string, actor?: ActorContext): Registration | null {
     const reg = this.registrations.find((r) => r.id === id || r.registration_number === id);
     if (!reg) return null;
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId || reg.institution_id !== actor.institutionId) {
+        throw new Error('403 Forbidden: Access denied to other institutions\' registrations.');
+      }
+    }
     return hydrateRegistration(reg, this.students, INITIAL_INSTITUTIONS, INITIAL_DEPARTMENTS, INITIAL_PROGRAMS);
   }
 
@@ -11995,7 +12166,22 @@ class LocalFallbackStore {
     return { registrationNumber, sequence: nextSeq };
   }
 
-  createRegistration(data: Partial<Registration>): Registration {
+  createRegistration(data: Partial<Registration>, actor?: ActorContext): Registration {
+    if (actor?.role === 'ADMINISTRATOR') {
+      throw new Error('403 Forbidden: Administrators are restricted from creating registrations. Registration creation is an operational Registrar action.');
+    }
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only and cannot create registrations.');
+    }
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId) {
+        throw new Error('403 Forbidden: Registrar has no assigned institution.');
+      }
+      if (data.institution_id && data.institution_id !== actor.institutionId) {
+        throw new Error('403 Forbidden: Registrars can only create registrations for their assigned institution.');
+      }
+    }
+
     const now = new Date().toISOString();
 
     // 1. Validate Master Data Hierarchy & Authoritative Codes
@@ -12072,13 +12258,29 @@ class LocalFallbackStore {
   updateRegistrationStatus(
     id: string,
     status: WorkflowStatus,
-    reasonOrNotes?: string
+    reasonOrNotes?: string,
+    actor?: ActorContext
   ): Registration {
     const idx = this.registrations.findIndex((r) => r.id === id);
     if (idx === -1) throw new Error('Registration not found');
 
-    const now = new Date().toISOString();
     const current = this.registrations[idx];
+
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only and cannot alter workflow status.');
+    }
+    if (actor?.role === 'ADMINISTRATOR') {
+      if (status === 'RESUBMITTED' || status === 'DRAFT') {
+        throw new Error(`403 Forbidden: Administrators cannot perform ${status} operational workflow actions.`);
+      }
+    }
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId || current.institution_id !== actor.institutionId) {
+        throw new Error('403 Forbidden: Cannot alter status of registration belonging to another institution.');
+      }
+    }
+
+    const now = new Date().toISOString();
 
     const updated: Registration = {
       ...current,
@@ -12104,9 +12306,23 @@ class LocalFallbackStore {
     return hydrateRegistration(updated, this.students, INITIAL_INSTITUTIONS, INITIAL_DEPARTMENTS, INITIAL_PROGRAMS);
   }
 
-  updateRegistrationDraft(id: string, data: Partial<Registration>): Registration {
+  updateRegistrationDraft(id: string, data: Partial<Registration>, actor?: ActorContext): Registration {
     const idx = this.registrations.findIndex((r) => r.id === id);
     if (idx === -1) throw new Error('Registration not found');
+
+    const current = this.registrations[idx];
+
+    if (actor?.role === 'ADMINISTRATOR') {
+      throw new Error('403 Forbidden: Administrators cannot edit registration operational details.');
+    }
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only and cannot edit registrations.');
+    }
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId || current.institution_id !== actor.institutionId) {
+        throw new Error('403 Forbidden: Cannot modify registration belonging to another institution.');
+      }
+    }
 
     const now = new Date().toISOString();
     const updated: Registration = {
@@ -12118,6 +12334,27 @@ class LocalFallbackStore {
     this.registrations[idx] = updated;
     this.save();
     return hydrateRegistration(updated, this.students, INITIAL_INSTITUTIONS, INITIAL_DEPARTMENTS, INITIAL_PROGRAMS);
+  }
+
+  deleteRegistration(id: string, actor?: ActorContext): void {
+    const idx = this.registrations.findIndex((r) => r.id === id);
+    if (idx === -1) return;
+    const current = this.registrations[idx];
+
+    if (actor?.role === 'ADMINISTRATOR') {
+      throw new Error('403 Forbidden: Administrators cannot delete registrations.');
+    }
+    if (actor?.role === 'UNIVERSAL') {
+      throw new Error('403 Forbidden: Universal role is read-only.');
+    }
+    if (actor?.role === 'REGISTRAR') {
+      if (!actor.institutionId || current.institution_id !== actor.institutionId) {
+        throw new Error('403 Forbidden: Cannot delete registration belonging to another institution.');
+      }
+    }
+
+    this.registrations.splice(idx, 1);
+    this.save();
   }
 
   getDashboardMetrics(): DashboardMetrics {

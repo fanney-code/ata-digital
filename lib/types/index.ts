@@ -20,8 +20,18 @@ export interface Profile {
   full_name: string;
   email: string;
   role: UserRole;
+  institution_id?: string;
+  institution_name?: string;
+  institution_code?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ActorContext {
+  role: UserRole;
+  institutionId?: string;
+  userId?: string;
+  email?: string;
 }
 
 export interface Institution {
@@ -145,13 +155,78 @@ export interface DashboardMetrics {
 
 export interface AuditLog {
   id: string;
-  action: 'REGISTRATION_CREATED' | 'STATUS_CHANGE' | 'APPROVAL' | 'CONTROLLED_UNLOCK' | 'EXCEL_BATCH_IMPORT' | 'DOCUMENT_CAPTURED';
+  action:
+    | 'REGISTRATION_CREATED'
+    | 'STATUS_CHANGE'
+    | 'APPROVAL'
+    | 'CONTROLLED_UNLOCK'
+    | 'EXCEL_BATCH_IMPORT'
+    | 'DOCUMENT_CAPTURED'
+    | 'DOSSIER_APPROVED'
+    | 'CORRECTION_FLAGGED'
+    | string;
   actor_name: string;
-  actor_role: UserRole;
-  entity_type: 'REGISTRATION' | 'STUDENT' | 'DOCUMENT';
+  actor_role: UserRole | string;
+  entity_type: 'REGISTRATION' | 'STUDENT' | 'DOCUMENT' | string;
   entity_id: string;
   details: string;
   ip_address?: string;
   created_at: string;
+
+  // Governance & Cryptographic Ledger Extensions
+  event_number?: string;
+  relative_time?: string;
+  mutation_from?: string;
+  mutation_to?: string;
+  target_name?: string;
+  target_ref?: string;
+  target_program?: string;
+  audit_reason?: string;
+  reason_code?: string;
+  cert_number?: string;
+  manifest_name?: string;
+  block_hash?: string;
+  block_number?: number;
+  merkle_root?: string;
+  is_verified?: boolean;
 }
+
+export interface DashboardChecklistItem {
+  id: string;
+  notice_id?: string;
+  title: string;
+  description: string;
+  is_completed: boolean;
+  sort_order?: number;
+}
+
+export interface DashboardNotice {
+  id: string;
+  title: string;
+  message: string;
+  recipient_role: UserRole;
+  is_active: boolean;
+  checklist_title?: string;
+  items: DashboardChecklistItem[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  key: string;
+  title: string;
+  message: string;
+  recipient_role: UserRole;
+  target_url: string;
+  action_type: 'REGISTRATIONS_REVIEW' | 'REGISTRATIONS_CORRECTION' | 'ASSIGNED_NOTICE' | 'AUDIT_LOG_SYNC';
+  is_read: boolean;
+  is_completed: boolean;
+  created_at: string;
+  notice_id?: string;
+  metadata?: Record<string, any>;
+}
+
+
 
