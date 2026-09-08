@@ -1801,34 +1801,52 @@ export async function uploadDocumentAttachment(
   registrationId: string,
   actor?: ActorContext
 ): Promise<any> {
-  const existing = registrationId ? await fetchRegistrationById(registrationId).catch(() => null) : null;
-  assertPermission('UPLOAD_DOCUMENT', actor, existing?.institution_id);
+  const existing = await fetchRegistrationById(registrationId, actor);
+  if (!existing) {
+    throw new Error('404 Registration not found.');
+  }
+  assertPermission('UPLOAD_DOCUMENT', actor, existing.institution_id);
 
-  const fileExt = file.name.split('.').pop();
-  const filePath = `reg_${registrationId}_${Date.now()}.${fileExt}`;
-
-  // Use admin client for storage — bypasses RLS policies that block anon key uploads
-  const storageClient = supabaseAdmin || supabase;
-
-  // Auto-create the bucket if it doesn't exist yet (requires service role key)
-  if (supabaseAdmin) {
-    await ensureStorageBucket().catch((e) =>
-      console.warn('Bucket ensure warning:', e.message)
-    );
+  if (!supabaseAdmin) {
+    console.error('Document upload requires SUPABASE_SERVICE_ROLE_KEY for the private storage bucket.');
+    throw new Error('503 Document storage is not configured. Please contact an administrator.');
+  }
+  if (file.size <= 0 || file.size > 52_428_800) {
+    throw new Error('400 The selected file must be between 1 byte and 50 MB.');
   }
 
-  // Upload to Supabase Storage Bucket
-  const { error: uploadError } = await storageClient.storage
+  const allowedContentTypes = new Set([
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/tiff',
+  ]);
+  if (!allowedContentTypes.has(file.type)) {
+    throw new Error('400 Unsupported file type. Upload a PDF, JPEG, PNG, or TIFF file.');
+  }
+
+  const extensionByType: Record<string, string> = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/tiff': 'tiff',
+  };
+  const filePath = `${registrationId}/${crypto.randomUUID()}.${extensionByType[file.type]}`;
+
+  const bucketResult = await ensureStorageBucket();
+  if (!bucketResult.ok) {
+    console.error('Document bucket setup failed:', bucketResult.message);
+    throw new Error('503 Document storage is unavailable. Please try again later.');
+  }
+
+  const { error: uploadError } = await supabaseAdmin.storage
     .from(STORAGE_BUCKET)
-    .upload(filePath, file);
-
+    .upload(filePath, file, { contentType: file.type, upsert: false });
   if (uploadError) {
-    // Throw so the UI knows the file was not stored — do not silently continue
-    throw new Error(`Storage upload failed: ${uploadError.message}`);
+    console.error('Document storage upload failed:', uploadError.message);
+    throw new Error('503 Unable to store the uploaded document. Please try again.');
   }
 
-  // Insert metadata into DB (also via admin to bypass RLS on documents table)
-  const dbClient = supabaseAdmin || supabase;
   const payload = {
     registration_id: registrationId,
     file_path: filePath,
@@ -1836,230 +1854,141 @@ export async function uploadDocumentAttachment(
     file_size: `${Math.round(file.size / 1024)} KB`,
     created_at: new Date().toISOString(),
   };
-
-  const { data, error } = await dbClient
+  const { data, error } = await supabaseAdmin
     .from('documents')
     .insert([payload])
     .select()
     .single();
 
-  if (error) {
-    console.warn('Documents table insert fallback (table not in schema cache):', error.message);
-    return {
-      id: `doc-${Date.now()}`,
-      ...payload,
-    };
+  if (error || !data) {
+    console.error('Document metadata insert failed:', error?.message);
+    await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([filePath]);
+    throw new Error('500 Unable to save the uploaded document. Please try again.');
   }
 
   return data;
 }
 
+interface ResolvedDocumentAttachment {
+  id: string;
+  filePath: string;
+  fileName: string;
+  registrationId: string;
+  institutionId: string;
+}
+
+async function resolveDocumentAttachment(
+  documentId: string,
+  action: 'PREVIEW_DOCUMENT' | 'DOWNLOAD_DOCUMENT' | 'DELETE_DOCUMENT',
+  actor?: ActorContext
+): Promise<ResolvedDocumentAttachment> {
+  if (!supabaseAdmin) {
+    console.error('Document retrieval requires SUPABASE_SERVICE_ROLE_KEY for the private storage bucket.');
+    throw new Error('503 Document storage is unavailable. Please try again later.');
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('documents')
+    .select('id, file_path, file_name, registration:registrations!inner(id, institution_id)')
+    .eq('id', documentId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Document lookup failed:', error.message);
+    throw new Error('500 Unable to retrieve this document. Please try again.');
+  }
+  if (!data?.file_path || !data.file_name || !data.registration) {
+    throw new Error('404 Document not found.');
+  }
+
+  const registration = Array.isArray(data.registration) ? data.registration[0] : data.registration;
+  if (!registration?.id || !registration.institution_id) {
+    throw new Error('404 Document not found.');
+  }
+  assertPermission(action, actor, registration.institution_id);
+
+  return {
+    id: data.id,
+    filePath: data.file_path,
+    fileName: data.file_name,
+    registrationId: registration.id,
+    institutionId: registration.institution_id,
+  };
+}
+
+function contentTypeForFile(fileName: string, storedContentType?: string): string {
+  if (storedContentType) return storedContentType;
+  const extension = fileName.toLowerCase().split('.').pop();
+  return {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+  }[extension || ''] || 'application/octet-stream';
+}
+
 export async function getDocumentFileBuffer(
   documentId: string,
-  registrationId: string,
   action: 'PREVIEW_DOCUMENT' | 'DOWNLOAD_DOCUMENT',
-  actor?: ActorContext,
-  fileName?: string
+  actor?: ActorContext
 ): Promise<{
   buffer: Buffer;
   contentType: string;
   fileName: string;
 }> {
-  const existing = registrationId ? await fetchRegistrationById(registrationId).catch(() => null) : null;
-  assertPermission(action, actor, existing?.institution_id);
+  const document = await resolveDocumentAttachment(documentId, action, actor);
+  const { data, error } = await supabaseAdmin!.storage
+    .from(STORAGE_BUCKET)
+    .download(document.filePath);
 
-  // 1. Look up the actual file_path stored at upload time from the documents table
-  let storedFilePath: string | null = null;
-  let storedFileName: string | null = null;
-  const dbClient = supabaseAdmin || supabase;
-  try {
-    const { data: docRecord } = await dbClient
-      .from('documents')
-      .select('file_path, file_name')
-      .eq('id', documentId)
-      .single();
-    if (docRecord) {
-      storedFilePath = docRecord.file_path || null;
-      storedFileName = docRecord.file_name || null;
-    }
-  } catch (_) {
-    // table may not exist yet — continue to fallback
+  if (error || !data) {
+    console.error('Document storage retrieval failed:', error?.message);
+    throw new Error('404 Unable to preview document. The uploaded file could not be found in storage.');
   }
-
-  const resolvedFileName = storedFileName || fileName || `document_${documentId}.pdf`;
-  const ext = resolvedFileName.toLowerCase();
-  const isPdf = ext.endsWith('.pdf');
-  const isJpg = ext.endsWith('.jpg') || ext.endsWith('.jpeg');
-  const isPng = ext.endsWith('.png');
-  const contentTypeFromExt = isPdf ? 'application/pdf' : isPng ? 'image/png' : isJpg ? 'image/jpeg' : 'application/octet-stream';
-
-  // 2. Download from storage using the exact stored path first, then fallback guesses
-  const candidatePaths: string[] = [];
-  if (storedFilePath) candidatePaths.push(storedFilePath);
-  // Legacy fallback paths (for documents uploaded before this fix)
-  candidatePaths.push(
-    `reg_${registrationId}_${documentId}`,
-    resolvedFileName,
-  );
-
-  try {
-    const storageClient = supabaseAdmin || supabase;
-    for (const p of candidatePaths) {
-      const { data } = await storageClient.storage.from(STORAGE_BUCKET).download(p);
-      if (data) {
-        const arrayBuffer = await data.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        return { buffer, contentType: contentTypeFromExt, fileName: resolvedFileName };
-      }
-    }
-  } catch (err: any) {
-    console.warn('Storage file fetch fallback:', err.message);
-  }
-
-  // 3. Generate placeholder fallback content only when no real file is available
-  const studentName = existing?.student ? `${existing.student.first_name} ${existing.student.last_name}` : 'Registered Candidate';
-  const regNo = existing?.registration_number || 'REG-PENDING';
-  const uid = existing?.student?.permanent_uid || 'STU-AUTHORITATIVE';
-
-  if (isPdf) {
-    // Generate valid standard PDF 1.4
-    const pdfContent = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length 280 >>
-stream
-BT
-/F1 18 Tf
-50 720 Td
-(ASIA THEOLOGICAL ASSOCIATION - CERTIFIED RECORD) Tj
-0 -35 Td
-/F1 12 Tf
-(Document: ${resolvedFileName.replace(/[\(\)\\]/g, '')}) Tj
-0 -25 Td
-(Candidate: ${studentName.replace(/[\(\)\\]/g, '')}) Tj
-0 -20 Td
-(Permanent UID: ${uid.replace(/[\(\)\\]/g, '')}) Tj
-0 -20 Td
-(Registration #: ${regNo.replace(/[\(\)\\]/g, '')}) Tj
-0 -30 Td
-/F1 10 Tf
-(Status: Verified Authority Document) Tj
-ET
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000244 00000 n 
-0000000575 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-650
-%%EOF`;
-    return {
-      buffer: Buffer.from(pdfContent),
-      contentType: 'application/pdf',
-      fileName: resolvedFileName,
-    };
-  }
-
-  // Fallback for image types
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
-    <rect width="100%" height="100%" fill="#f8fafc"/>
-    <rect x="40" y="40" width="720" height="520" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-    <text x="80" y="100" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0f172a">ASIA THEOLOGICAL ASSOCIATION</text>
-    <text x="80" y="130" font-family="Arial, sans-serif" font-size="14" fill="#64748b">Verified Student Credential Document</text>
-    <line x1="80" y1="160" x2="720" y2="160" stroke="#e2e8f0" stroke-width="1.5"/>
-    <text x="80" y="210" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#334155">Document File:</text>
-    <text x="260" y="210" font-family="Arial, sans-serif" font-size="14" fill="#0f172a">${resolvedFileName}</text>
-    <text x="80" y="250" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#334155">Student Name:</text>
-    <text x="260" y="250" font-family="Arial, sans-serif" font-size="14" fill="#0f172a">${studentName}</text>
-    <text x="80" y="290" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#334155">Permanent UID:</text>
-    <text x="260" y="290" font-family="monospace" font-size="14" fill="#047857">${uid}</text>
-    <text x="80" y="330" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#334155">Registration #:</text>
-    <text x="260" y="330" font-family="monospace" font-size="14" fill="#0f172a">#${regNo}</text>
-    <circle cx="640" cy="460" r="50" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
-    <text x="640" y="455" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#047857">ATA SEAL</text>
-    <text x="640" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#047857">VERIFIED</text>
-  </svg>`;
 
   return {
-    buffer: Buffer.from(svg),
-    contentType: 'image/svg+xml',
-    fileName: resolvedFileName,
+    buffer: Buffer.from(await data.arrayBuffer()),
+    contentType: contentTypeForFile(document.fileName, data.type),
+    fileName: document.fileName,
   };
 }
 
 export async function deleteDocumentAttachment(
   documentId: string,
-  registrationId: string,
   actor?: ActorContext
 ): Promise<{ success: boolean; message: string }> {
-  const existing = registrationId ? await fetchRegistrationById(registrationId).catch(() => null) : null;
-  assertPermission('DELETE_DOCUMENT', actor, existing?.institution_id);
+  const document = await resolveDocumentAttachment(documentId, 'DELETE_DOCUMENT', actor);
 
-  // 1. Look up the actual file_path from the documents table
-  let storedFilePath: string | null = null;
-  const dbClient = supabaseAdmin || supabase;
-  try {
-    const { data: docRecord } = await dbClient
-      .from('documents')
-      .select('file_path')
-      .eq('id', documentId)
-      .single();
-    storedFilePath = docRecord?.file_path || null;
-  } catch (_) {
-    // table may not be present
+  const { error: storageError } = await supabaseAdmin!.storage
+    .from(STORAGE_BUCKET)
+    .remove([document.filePath]);
+  if (storageError) {
+    console.error('Document storage deletion failed:', storageError.message);
+    throw new Error('500 Unable to delete this document. Please try again.');
   }
 
-  // 2. Remove from storage using the exact stored path
-  try {
-    const storageClient = supabaseAdmin || supabase;
-    const storagePaths: string[] = [];
-    if (storedFilePath) storagePaths.push(storedFilePath);
-    // Legacy guesses for documents uploaded before this fix
-    storagePaths.push(`reg_${registrationId}_${documentId}`, documentId);
-    await storageClient.storage.from(STORAGE_BUCKET).remove(storagePaths);
-  } catch (err: any) {
-    console.warn('Storage delete fallback:', err.message);
+  const { error: databaseError } = await supabaseAdmin!
+    .from('documents')
+    .delete()
+    .eq('id', document.id);
+  if (databaseError) {
+    console.error('Document metadata deletion failed:', databaseError.message);
+    throw new Error('500 Unable to delete this document. Please try again.');
   }
 
-  // 2. Remove from database if table exists
   try {
-    await dbClient.from('documents').delete().eq('id', documentId);
-  } catch (err: any) {
-    console.warn('Documents table delete fallback:', err.message);
-  }
-
-  // 3. Record in audit logs
-  try {
-    const actorName = actor?.email || 'Registrar';
-    const actorRole = actor?.role || 'REGISTRAR';
     await logAuditAction(
-      'STATUS_CHANGED',
-      actorName,
-      actorRole,
-      'REGISTRATION',
-      registrationId,
-      `Document ${documentId} permanently deleted from registration record #${existing?.registration_number || registrationId}`
+      'DOCUMENT_DELETED',
+      actor?.email || 'Registrar',
+      actor?.role || 'REGISTRAR',
+      'DOCUMENT',
+      document.id,
+      `Document deleted from registration record #${document.registrationId}`
     );
   } catch (err: any) {
-    console.warn('Audit log write fallback:', err.message);
+    console.warn('Document deletion audit write failed:', err.message);
   }
 
   return { success: true, message: 'Document deleted successfully' };

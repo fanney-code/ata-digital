@@ -11,16 +11,10 @@ export async function GET(
     if (errorResponse) return errorResponse;
 
     const { id } = await params;
-    const searchParams = req.nextUrl.searchParams;
-    const registrationId = searchParams.get('registrationId') || '';
-    const filename = searchParams.get('filename') || '';
-
     const { buffer, contentType, fileName } = await getDocumentFileBuffer(
       id,
-      registrationId,
       'DOWNLOAD_DOCUMENT',
-      actor,
-      filename
+      actor
     );
 
     return new Response(buffer as any, {
@@ -32,7 +26,12 @@ export async function GET(
       },
     });
   } catch (err: any) {
-    const status = err.message?.includes('403') ? 403 : 500;
-    return NextResponse.json({ error: err.message || 'Download failed' }, { status });
+    const status = err.message?.startsWith('403') ? 403 : err.message?.startsWith('404') ? 404 : 500;
+    const error = status === 403
+      ? 'You do not have permission to download this document.'
+      : status === 404
+        ? 'Document not found.'
+        : 'Unable to download this document. Please try again.';
+    return NextResponse.json({ error }, { status });
   }
 }

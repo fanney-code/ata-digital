@@ -103,6 +103,9 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [activeDrawerDoc, setActiveDrawerDoc] = useState<VaultDocument | null>(null);
   const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [docToDelete, setDocToDelete] = useState<VaultDocument | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -343,9 +346,53 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
     return sortedDocuments.slice(start, start + pageSize);
   }, [sortedDocuments, currentPage, pageSize]);
 
+  // Release private preview bytes as soon as the viewer changes or unmounts.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
+  };
+
+  const openPreview = async (doc: VaultDocument) => {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+
+    try {
+      const response = await fetch(`/api/documents/${doc.id}/preview`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to preview this document. Please try again.');
+      }
+      const file = await response.blob();
+      if (file.size === 0) {
+        throw new Error('Unable to preview this document. Please try again.');
+      }
+      setPreviewUrl(URL.createObjectURL(file));
+    } catch (error: unknown) {
+      setPreviewError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to preview this document. Please try again.'
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   // Download Document (Registrar Only)
   const handleDownloadDocument = (doc: VaultDocument) => {
-    const downloadUrl = `/api/documents/${doc.id}/download?registrationId=${encodeURIComponent(doc.registrationId)}&filename=${encodeURIComponent(doc.name)}`;
+    const downloadUrl = `/api/documents/${doc.id}/download`;
     const a = document.createElement('a');
     a.href = downloadUrl;
     a.download = doc.name;
@@ -363,7 +410,7 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
       if (onDeleteDocument) {
         await onDeleteDocument(docToDelete.id, docToDelete.registrationId);
       } else {
-        const res = await fetch(`/api/documents/${docToDelete.id}?registrationId=${encodeURIComponent(docToDelete.registrationId)}`, {
+        const res = await fetch(`/api/documents/${docToDelete.id}`, {
           method: 'DELETE',
           credentials: 'include',
         });
@@ -1375,7 +1422,7 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
                 {/* Preview: ALLOWED for Registrar, Administrator, Universal */}
                 <button
                   type="button"
-                  onClick={() => setPreviewDoc(activeDrawerDoc)}
+                  onClick={() => openPreview(activeDrawerDoc)}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
                 >
                   <Eye className="h-3.5 w-3.5 text-slate-600" />
@@ -1445,7 +1492,7 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
                   </button>
                 )}
                 <button
-                  onClick={() => setPreviewDoc(null)}
+                  onClick={closePreview}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
                   aria-label="Close preview"
                 >
@@ -1456,22 +1503,34 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
 
             {/* Modal Content */}
             <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-50 flex items-center justify-center">
-              {previewDoc.fileType === 'PDF' || previewDoc.name.toLowerCase().endsWith('.pdf') ? (
-                <iframe
-                  src={`/api/documents/${previewDoc.id}/preview?registrationId=${encodeURIComponent(previewDoc.registrationId)}&filename=${encodeURIComponent(previewDoc.name)}`}
-                  className="w-full h-[65vh] rounded-xl border border-slate-200 bg-white shadow-xs"
-                  title={previewDoc.name}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center max-h-[65vh]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/documents/${previewDoc.id}/preview?registrationId=${encodeURIComponent(previewDoc.registrationId)}&filename=${encodeURIComponent(previewDoc.name)}`}
-                    alt={previewDoc.name}
-                    className="max-h-[65vh] max-w-full rounded-xl object-contain shadow-lg border border-slate-200 bg-white"
-                  />
+              {previewLoading ? (
+                <p className="text-sm font-semibold text-slate-600">Loading preview…</p>
+              ) : previewError ? (
+                <div className="max-w-md rounded-xl border border-rose-200 bg-rose-50 p-4 text-center text-sm text-rose-700">
+                  {previewError}
                 </div>
-              )}
+              ) : previewUrl ? (
+                previewDoc.fileType === 'PDF' || previewDoc.name.toLowerCase().endsWith('.pdf') ? (
+                  <iframe
+                    src={previewUrl}
+                    className="w-full h-[65vh] rounded-xl border border-slate-200 bg-white shadow-xs"
+                    title={previewDoc.name}
+                  />
+                ) : previewDoc.fileType === 'TIFF' || /\.tiff?$/i.test(previewDoc.name) ? (
+                  <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800">
+                    This file format cannot be previewed in this browser.
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center max-h-[65vh]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt={previewDoc.name}
+                      className="max-h-[65vh] max-w-full rounded-xl object-contain shadow-lg border border-slate-200 bg-white"
+                    />
+                  </div>
+                )
+              ) : null}
             </div>
 
             {/* Modal Footer */}

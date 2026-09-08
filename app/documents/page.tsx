@@ -57,9 +57,9 @@ export default function DocumentsPage() {
   };
 
 
-  const handleDeleteDocument = async (docId: string, registrationId?: string) => {
+  const handleDeleteDocument = async (docId: string) => {
     try {
-      const res = await fetch(`/api/documents/${docId}?registrationId=${encodeURIComponent(registrationId || '')}`, {
+      const res = await fetch(`/api/documents/${docId}`, {
         method: 'DELETE',
         credentials: 'include',
       });

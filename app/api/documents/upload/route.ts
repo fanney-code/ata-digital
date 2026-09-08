@@ -32,7 +32,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ document: result }, { status: 201 });
   } catch (err: any) {
     console.error('[POST /api/documents/upload]', err.message);
-    const status = err.message?.startsWith('403') ? 403 : 500;
-    return NextResponse.json({ error: err.message }, { status });
+    const status = err.message?.startsWith('400') ? 400 : err.message?.startsWith('403') ? 403 : err.message?.startsWith('404') ? 404 : 500;
+    const error = status === 403
+      ? 'You do not have permission to upload documents for this registration.'
+      : status === 404
+        ? 'Registration not found.'
+        : status === 400
+          ? err.message.replace(/^400\s*/, '')
+          : 'Unable to upload the document. Please try again.';
+    return NextResponse.json({ error }, { status });
   }
 }

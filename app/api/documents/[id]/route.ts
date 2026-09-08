@@ -11,22 +11,15 @@ export async function DELETE(
     if (errorResponse) return errorResponse;
 
     const { id } = await params;
-    const searchParams = req.nextUrl.searchParams;
-    let registrationId = searchParams.get('registrationId') || '';
-
-    if (!registrationId) {
-      try {
-        const body = await req.json();
-        registrationId = body.registrationId || '';
-      } catch {
-        // body not present
-      }
-    }
-
-    const result = await deleteDocumentAttachment(id, registrationId, actor);
+    const result = await deleteDocumentAttachment(id, actor);
     return NextResponse.json(result);
   } catch (err: any) {
-    const status = err.message?.includes('403') ? 403 : 500;
-    return NextResponse.json({ error: err.message || 'Delete failed' }, { status });
+    const status = err.message?.startsWith('403') ? 403 : err.message?.startsWith('404') ? 404 : 500;
+    const error = status === 403
+      ? 'You do not have permission to delete this document.'
+      : status === 404
+        ? 'Document not found.'
+        : 'Unable to delete this document. Please try again.';
+    return NextResponse.json({ error }, { status });
   }
 }
