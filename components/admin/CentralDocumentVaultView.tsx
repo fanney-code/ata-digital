@@ -193,7 +193,24 @@ export const INITIAL_ADMIN_VAULT_DOCUMENTS: AdminVaultDocument[] = [
   },
 ];
 
+import { DocumentVaultView } from '@/components/documents/DocumentVaultView';
+
 export const CentralDocumentVaultView: React.FC<CentralDocumentVaultViewProps> = ({
+  registrations = [],
+  onSelectRegistration,
+  onUploadDocument,
+}) => {
+  return (
+    <DocumentVaultView
+      registrations={registrations}
+      currentRole="ADMINISTRATOR"
+      onSelectRegistration={onSelectRegistration}
+      onUploadDocument={onUploadDocument}
+    />
+  );
+};
+
+const _unused_CentralDocumentVaultView: React.FC<CentralDocumentVaultViewProps> = ({
   registrations = [],
   onSelectRegistration,
   onUploadDocument,

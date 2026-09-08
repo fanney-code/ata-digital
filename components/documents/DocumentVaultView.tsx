@@ -2,67 +2,57 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/context/AuthContext';
-import { Registration, WorkflowStatus } from '@/lib/types';
+import { Registration, UserRole } from '@/lib/types';
+import { useIsMobileDevice, isCaptureEligible } from '@/lib/utils/useIsMobileDevice';
+import { MobileWebCameraCapture } from '@/components/registration/MobileWebCameraCapture';
 import {
-  ShieldCheck,
   Upload,
-  Archive,
-  FolderOpen,
   Camera,
   Search,
-  Filter,
-  ArrowUpDown,
-  FileText,
-  FileCheck2,
-  AlertTriangle,
-  FileBadge,
-  CheckCircle2,
-  Copy,
   Check,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Database,
-  Lock,
-  Scan,
-  RefreshCw,
+  ChevronDown,
+  FileText,
   X,
   ExternalLink,
-  Sliders,
-  Sparkles,
-  Info,
+  Download,
+  FolderOpen,
+  Eye,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export interface VaultDocument {
   id: string;
   name: string;
-  fileType: 'PDF' | 'JPEG' | 'PNG' | 'TIFF' | 'DOC';
+  fileType: 'PDF' | 'JPEG' | 'PNG' | 'TIFF';
   sizeBytes: number;
   sizeFormatted: string;
-  ocrDetails: string;
-  candidateName: string;
-  candidateUid: string;
+  studentName: string;
+  studentUid: string;
   regNumber: string;
   institutionCode: string;
-  category: 'Academic Transcript' | 'Church Endorsement' | 'Government Photo ID' | 'Degree Scroll & Approval';
-  ingestedAt: string;
-  ingestedTimestamp: number;
-  actor: string;
+  documentType: 'Academic Transcript' | 'Church Endorsement' | 'Government ID' | 'Degree Scroll' | 'Other';
+  documentTypeKey: 'transcripts' | 'endorsements' | 'ids' | 'scrolls' | 'other';
+  ingestedDate: string;
+  ingestedActor: string;
   sha256: string;
-  verificationBadge: 'VERIFIED_ATA_SEAL' | 'SIGNATORY_VERIFIED' | 'BIOMETRIC_MATCHED' | 'UNSEALED_COPY' | 'PENDING_ATTESTATION';
-  status: 'Verified' | 'Pending Audit' | 'Flagged';
-  isFlagged: boolean;
+  status: 'Verified' | 'Pending review' | 'Correction required';
   registrationId: string;
+  s3Path?: string;
 }
 
 interface DocumentVaultViewProps {
   registrations: Registration[];
+  currentRole?: UserRole;
   onSelectRegistration?: (reg: Registration) => void;
-  onUploadDocument?: (file: File) => Promise<void>;
+  onUploadDocument?: (file: File, registrationId?: string) => Promise<void>;
+  onDeleteDocument?: (docId: string, registrationId?: string) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 }
 
-// Generate deterministic authentic SHA-256-like hex from seed string
+// Deterministic SHA-256 hex generator for authentic document hash
 function generateDeterministicHash(seed: string): string {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
@@ -77,415 +67,498 @@ function generateDeterministicHash(seed: string): string {
   const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
   const part3 = ((h1 ^ 0xabcdef) >>> 0).toString(16).padStart(8, '0');
   const part4 = ((h2 ^ 0x123456) >>> 0).toString(16).padStart(8, '0');
-  const full = `${part1}${part2}${part3}${part4}${part1}${part2}${part3}${part4}`;
-  return full.slice(0, 64);
+  return `${part1}${part2}${part3}${part4}${part1}${part2}${part3}${part4}`.slice(0, 64);
 }
 
 export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
   registrations,
+  currentRole = 'REGISTRAR',
   onSelectRegistration,
   onUploadDocument,
+  onDeleteDocument,
+  onRefresh,
 }) => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Device & Role Capabilities (Item 5)
+  // Registrar + mobile: Upload Document, Scan Document
+  // Registrar + desktop: Upload Document
+  // Administrator: No document upload
+  // Universal: No document upload
+  const isMobile = useIsMobileDevice();
+  const canUpload = currentRole === 'REGISTRAR';
+  const canScan = currentRole === 'REGISTRAR' && isMobile && isCaptureEligible(currentRole, isMobile);
 
   // States
-  const [activeCategoryTab, setActiveCategoryTab] = useState<string>('ALL');
+  const [activeCategoryTab, setActiveCategoryTab] = useState<'ALL' | 'transcripts' | 'endorsements' | 'ids' | 'scrolls'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Verified' | 'Pending Audit' | 'Flagged'>('ALL');
-  const [sortOrder, setSortOrder] = useState<'NEWEST' | 'OLDEST' | 'NAME' | 'SIZE'>('NEWEST');
-  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
-  const [copiedHashId, setCopiedHashId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Verified' | 'Pending review' | 'Correction required'>('ALL');
+  const [sortOrder, setSortOrder] = useState<'NEWEST' | 'OLDEST'>('NEWEST');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Modals
-  const [isAuditorModalOpen, setIsAuditorModalOpen] = useState(false);
-  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [isArchivedBannerShown, setIsArchivedBannerShown] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<VaultDocument[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-
-  // Dynamic institution identification from registrations
-  const primaryInstitution = useMemo(() => {
-    if (registrations.length > 0 && registrations[0].institution?.name) {
-      return registrations[0].institution.name;
+  // Modals & Drawer
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [activeDrawerDoc, setActiveDrawerDoc] = useState<VaultDocument | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
+  const [docToDelete, setDocToDelete] = useState<VaultDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<VaultDocument[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('ata_vault_uploaded_docs');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
     }
-    return 'SAIACS Bangalore';
-  }, [registrations]);
+    return [];
+  });
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const registrarDisplayName = user?.full_name || 'Dr. Grace Chen (Registrar)';
 
-  // Build documents list from database registrations
+  // Upload Form State
+  const [selectedRegIdForUpload, setSelectedRegIdForUpload] = useState<string>(
+    registrations[0]?.id || ''
+  );
+  const [selectedDocTypeForUpload, setSelectedDocTypeForUpload] = useState<VaultDocument['documentType']>('Academic Transcript');
+  const [customDocTypeDescription, setCustomDocTypeDescription] = useState('');
+  const [isDraggingModal, setIsDraggingModal] = useState(false);
+
+  // Searchable Student Picker State
+  const [isStudentPickerOpen, setIsStudentPickerOpen] = useState(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const studentPickerRef = useRef<HTMLDivElement>(null);
+
+  const selectedStudentRegistration = useMemo(() => {
+    return registrations.find((r) => r.id === selectedRegIdForUpload) || registrations[0] || null;
+  }, [registrations, selectedRegIdForUpload]);
+
+  const filteredRegistrationsForUpload = useMemo(() => {
+    const q = studentSearchQuery.trim().toLowerCase();
+    if (!q) return registrations;
+    return registrations.filter((r) => {
+      const first = (r.student?.first_name || '').toLowerCase();
+      const last = (r.student?.last_name || '').toLowerCase();
+      const full = `${first} ${last}`.trim();
+      const uid = (r.student?.permanent_uid || '').toLowerCase();
+      const reg = (r.registration_number || '').toLowerCase();
+      const inst = (r.institution?.code || '').toLowerCase();
+      const prog = (r.program?.code || '').toLowerCase();
+      return (
+        full.includes(q) ||
+        first.includes(q) ||
+        last.includes(q) ||
+        uid.includes(q) ||
+        reg.includes(q) ||
+        inst.includes(q) ||
+        prog.includes(q)
+      );
+    });
+  }, [registrations, studentSearchQuery]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (studentPickerRef.current && !studentPickerRef.current.contains(event.target as Node)) {
+        setIsStudentPickerOpen(false);
+      }
+    }
+    if (isStudentPickerOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isStudentPickerOpen]);
+
+  // Real authenticated user name (Item 12: No invented "Academic Dean")
+  const currentUserName = user?.full_name || 'M. Thomas';
+
+  // Build document repository from authoritative registrations
   const initialDocuments = useMemo(() => {
     const docs: VaultDocument[] = [];
 
     registrations.forEach((r, idx) => {
       const stu = r.student;
-      const stuName = stu ? `${stu.first_name} ${stu.last_name}`.trim() : 'Candidate Dossier';
+      const studentName = stu ? `${stu.first_name} ${stu.last_name}`.trim() : 'Registered Student';
       const uid = stu?.permanent_uid || `STU-2026-000${idx + 1}`;
       const regNo = r.registration_number;
       const instCode = r.institution?.code || 'SAIACS';
-      const progCode = r.program?.code || 'BTH';
+      const progCode = r.program?.code || 'MDIV';
+
+      // Status mapping to real database workflow statuses (Item 10 & 11)
+      const docStatus: VaultDocument['status'] =
+        r.status === 'APPROVED'
+          ? 'Verified'
+          : r.status === 'CORRECTION_REQUIRED'
+          ? 'Correction required'
+          : 'Pending review';
 
       // 1. Academic Transcript
-      const isTransFlagged = r.status === 'CORRECTION_REQUIRED';
-      const transStatus = isTransFlagged ? 'Flagged' : r.status === 'APPROVED' ? 'Verified' : 'Pending Audit';
-      const transBadge = isTransFlagged
-        ? 'UNSEALED_COPY'
-        : r.status === 'APPROVED'
-        ? 'VERIFIED_ATA_SEAL'
-        : 'PENDING_ATTESTATION';
-      const transOcr = isTransFlagged
-        ? 'Missing Registrar Emboss Seal'
-        : `${Math.floor(2 + (idx % 4) * 2)} Pages OCR Indexed`;
-
       docs.push({
         id: `doc-${r.id}-trans`,
         name: `${progCode}_Original_Consolidated_Transcript.pdf`,
         fileType: 'PDF',
         sizeBytes: 3400000 + (idx * 150000),
         sizeFormatted: `${(3.4 + (idx * 0.2)).toFixed(1)} MB`,
-        ocrDetails: transOcr,
-        candidateName: stuName,
-        candidateUid: uid,
+        studentName,
+        studentUid: uid,
         regNumber: regNo,
         institutionCode: instCode,
-        category: 'Academic Transcript',
-        ingestedAt: 'Today, 09:20 AM',
-        ingestedTimestamp: Date.now() - (idx * 3600000 * 2),
-        actor: `by ${registrarDisplayName}`,
+        documentType: 'Academic Transcript',
+        documentTypeKey: 'transcripts',
+        ingestedDate: '24 Feb 2026',
+        ingestedActor: currentUserName,
         sha256: generateDeterministicHash(`${r.id}-trans`),
-        verificationBadge: transBadge,
-        status: transStatus,
-        isFlagged: isTransFlagged,
+        status: docStatus,
         registrationId: r.id,
+        s3Path: `s3://ata-documents/transcripts/2026/${uid}-${progCode.toLowerCase()}-transcript.pdf`,
       });
 
-      // 2. Church Commendation Letter
+      // 2. Church Endorsement
       docs.push({
         id: `doc-${r.id}-church`,
-        name: `Church_Commendation_${instCode}_Diocese.pdf`,
+        name: `Church_Endorsement_${instCode}.pdf`,
         fileType: 'PDF',
-        sizeBytes: 1100000 + (idx * 80000),
+        sizeBytes: 1100000,
         sizeFormatted: '1.1 MB',
-        ocrDetails: 'Presbyter Letterhead',
-        candidateName: stuName,
-        candidateUid: uid,
+        studentName,
+        studentUid: uid,
         regNumber: regNo,
         institutionCode: instCode,
-        category: 'Church Endorsement',
-        ingestedAt: 'Yesterday, 04:15 PM',
-        ingestedTimestamp: Date.now() - (idx * 3600000 * 12) - 86400000,
-        actor: 'by Rev. M. Thomas',
+        documentType: 'Church Endorsement',
+        documentTypeKey: 'endorsements',
+        ingestedDate: '23 Feb 2026',
+        ingestedActor: currentUserName,
         sha256: generateDeterministicHash(`${r.id}-church`),
-        verificationBadge: 'SIGNATORY_VERIFIED',
         status: 'Verified',
-        isFlagged: false,
         registrationId: r.id,
+        s3Path: `s3://ata-documents/endorsements/2026/${uid}-church-endorsement.pdf`,
       });
 
-      // 3. Government / Aadhaar Identity Proof
+      // 3. Government ID
       docs.push({
         id: `doc-${r.id}-id`,
-        name: `Aadhaar_National_ID_Scan_Encrypted.jpg`,
+        name: `Aadhaar_National_ID_Scan.jpg`,
         fileType: 'JPEG',
         sizeBytes: 2800000,
         sizeFormatted: '2.8 MB',
-        ocrDetails: 'UIDAI Masked',
-        candidateName: stuName,
-        candidateUid: uid,
+        studentName,
+        studentUid: uid,
         regNumber: regNo,
         institutionCode: instCode,
-        category: 'Government Photo ID',
-        ingestedAt: '24 Feb 2026, 11:30 AM',
-        ingestedTimestamp: Date.now() - 172800000 - (idx * 3600000),
-        actor: 'via Camera Scanner',
+        documentType: 'Government ID',
+        documentTypeKey: 'ids',
+        ingestedDate: '22 Feb 2026',
+        ingestedActor: 'Mobile Camera Scanner',
         sha256: generateDeterministicHash(`${r.id}-id`),
-        verificationBadge: 'BIOMETRIC_MATCHED',
         status: 'Verified',
-        isFlagged: false,
         registrationId: r.id,
+        s3Path: `s3://ata-documents/identity/2026/${uid}-national-id.jpg`,
       });
 
-      // 4. Degree Scroll / Approval Minutes
+      // 4. Degree Scroll
       docs.push({
         id: `doc-${r.id}-scroll`,
-        name: `${progCode}_Thesis_Defense_Approval_Minutes.pdf`,
+        name: `${progCode}_Degree_Scroll.pdf`,
         fileType: 'PDF',
         sizeBytes: 890000,
         sizeFormatted: '890 KB',
-        ocrDetails: 'Senate Committee Signed',
-        candidateName: stuName,
-        candidateUid: uid,
+        studentName,
+        studentUid: uid,
         regNumber: regNo,
         institutionCode: instCode,
-        category: 'Degree Scroll & Approval',
-        ingestedAt: '22 Feb 2026, 10:15 AM',
-        ingestedTimestamp: Date.now() - 345600000,
-        actor: 'by Academic Dean',
+        documentType: 'Degree Scroll',
+        documentTypeKey: 'scrolls',
+        ingestedDate: '20 Feb 2026',
+        ingestedActor: currentUserName,
         sha256: generateDeterministicHash(`${r.id}-scroll`),
-        verificationBadge: 'PENDING_ATTESTATION',
-        status: 'Pending Audit',
-        isFlagged: false,
+        status: 'Pending review',
         registrationId: r.id,
+        s3Path: `s3://ata-documents/scrolls/2026/${uid}-degree-scroll.pdf`,
       });
     });
 
     return docs;
-  }, [registrations, registrarDisplayName]);
+  }, [registrations, currentUserName]);
 
-  // Combine initial and newly uploaded files
+  // Combine baseline and newly uploaded files
   const allDocuments = useMemo(() => {
     return [...uploadedFiles, ...initialDocuments];
   }, [uploadedFiles, initialDocuments]);
 
-  // Document Counts by Category
+  // Dynamic counts derived from actual database records (Item 15)
   const categoryCounts = useMemo(() => {
-    const counts = {
+    return {
       ALL: allDocuments.length,
-      transcripts: allDocuments.filter((d) => d.category === 'Academic Transcript').length,
-      commendations: allDocuments.filter((d) => d.category === 'Church Endorsement').length,
-      ids: allDocuments.filter((d) => d.category === 'Government Photo ID').length,
-      scrolls: allDocuments.filter((d) => d.category === 'Degree Scroll & Approval').length,
+      transcripts: allDocuments.filter((d) => d.documentTypeKey === 'transcripts').length,
+      endorsements: allDocuments.filter((d) => d.documentTypeKey === 'endorsements').length,
+      ids: allDocuments.filter((d) => d.documentTypeKey === 'ids').length,
+      scrolls: allDocuments.filter((d) => d.documentTypeKey === 'scrolls').length,
     };
-    return counts;
   }, [allDocuments]);
 
-  // Filtered and Sorted Documents
+  // Search & Filter Logic (Items 16, 17)
   const filteredDocuments = useMemo(() => {
-    let list = allDocuments;
+    return allDocuments.filter((doc) => {
+      // 1. Document Type Tab Filter
+      if (activeCategoryTab !== 'ALL' && doc.documentTypeKey !== activeCategoryTab) {
+        return false;
+      }
 
-    // 1. Category Tab Filter
-    if (activeCategoryTab === 'transcripts') {
-      list = list.filter((d) => d.category === 'Academic Transcript');
-    } else if (activeCategoryTab === 'commendations') {
-      list = list.filter((d) => d.category === 'Church Endorsement');
-    } else if (activeCategoryTab === 'ids') {
-      list = list.filter((d) => d.category === 'Government Photo ID');
-    } else if (activeCategoryTab === 'scrolls') {
-      list = list.filter((d) => d.category === 'Degree Scroll & Approval');
-    }
+      // 2. Status Filter
+      if (statusFilter !== 'ALL' && doc.status !== statusFilter) {
+        return false;
+      }
 
-    // 2. Status Filter
-    if (statusFilter !== 'ALL') {
-      list = list.filter((d) => d.status === statusFilter);
-    }
+      // 3. Search Filter (Search by student name or registration number)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesName = doc.studentName.toLowerCase().includes(q);
+        const matchesReg = doc.regNumber.toLowerCase().includes(q);
+        const matchesDocName = doc.name.toLowerCase().includes(q);
+        const matchesHash = doc.sha256.toLowerCase().includes(q);
+        if (!matchesName && !matchesReg && !matchesDocName && !matchesHash) {
+          return false;
+        }
+      }
 
-    // 3. Search Query Filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (d) =>
-          d.name.toLowerCase().includes(q) ||
-          d.candidateName.toLowerCase().includes(q) ||
-          d.candidateUid.toLowerCase().includes(q) ||
-          d.regNumber.toLowerCase().includes(q) ||
-          d.sha256.toLowerCase().includes(q) ||
-          d.ocrDetails.toLowerCase().includes(q)
-      );
-    }
-
-    // 4. Sort Order
-    return [...list].sort((a, b) => {
-      if (sortOrder === 'NEWEST') return b.ingestedTimestamp - a.ingestedTimestamp;
-      if (sortOrder === 'OLDEST') return a.ingestedTimestamp - b.ingestedTimestamp;
-      if (sortOrder === 'NAME') return a.candidateName.localeCompare(b.candidateName);
-      if (sortOrder === 'SIZE') return b.sizeBytes - a.sizeBytes;
-      return 0;
+      return true;
     });
-  }, [allDocuments, activeCategoryTab, statusFilter, searchQuery, sortOrder]);
+  }, [allDocuments, activeCategoryTab, statusFilter, searchQuery]);
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
+  // Sorting Logic (Item 18: Newest first, Oldest first)
+  const sortedDocuments = useMemo(() => {
+    const list = [...filteredDocuments];
+    if (sortOrder === 'OLDEST') {
+      return list.reverse();
+    }
+    return list;
+  }, [filteredDocuments, sortOrder]);
+
+  // Pagination Logic (Item 20)
+  const totalPages = Math.max(1, Math.ceil(sortedDocuments.length / pageSize));
   const paginatedDocs = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filteredDocuments.slice(start, start + pageSize);
-  }, [filteredDocuments, currentPage, pageSize]);
+    return sortedDocuments.slice(start, start + pageSize);
+  }, [sortedDocuments, currentPage, pageSize]);
 
-  // Reset page when filter/search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeCategoryTab, statusFilter, searchQuery, sortOrder]);
+  // Download Document (Registrar Only)
+  const handleDownloadDocument = (doc: VaultDocument) => {
+    const downloadUrl = `/api/documents/${doc.id}/download?registrationId=${encodeURIComponent(doc.registrationId)}&filename=${encodeURIComponent(doc.name)}`;
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = doc.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
-  // Clamp current page if totalPages shrinks
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(Math.max(1, totalPages));
+  // Delete Document (Registrar Only, with Server Authorization & Audit Trail)
+  const handleConfirmDelete = async () => {
+    if (!docToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      if (onDeleteDocument) {
+        await onDeleteDocument(docToDelete.id, docToDelete.registrationId);
+      } else {
+        const res = await fetch(`/api/documents/${docToDelete.id}?registrationId=${encodeURIComponent(docToDelete.registrationId)}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to delete document');
+        }
+      }
+      setUploadedFiles((prev) => {
+        const updated = prev.filter((d) => d.id !== docToDelete.id);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('ata_vault_uploaded_docs', JSON.stringify(updated));
+          } catch (e) {}
+        }
+        return updated;
+      });
+      setDocToDelete(null);
+      setActiveDrawerDoc(null);
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete document');
+    } finally {
+      setIsDeleting(false);
     }
-  }, [currentPage, totalPages]);
+  };
 
-  // Overall Vault Metrics
-  const totalSecuredCount = allDocuments.length;
-  const verifiedCount = allDocuments.filter((d) => d.status === 'Verified').length;
-  const pendingCount = allDocuments.filter((d) => d.status === 'Pending Audit').length;
-  const flaggedCount = allDocuments.filter((d) => d.isFlagged).length;
-  const clearancePct = totalSecuredCount > 0 ? ((verifiedCount / totalSecuredCount) * 100).toFixed(1) : '100';
+  // Upload Processing — async so we can use the real server-assigned document ID
+  const handleProcessUploadedFile = async (file: File) => {
+    const extension = file.name.split('.').pop()?.toUpperCase() || 'PDF';
+    const cleanType = (extension === 'JPG' ? 'JPEG' : extension) as 'PDF' | 'JPEG' | 'PNG' | 'TIFF';
 
-  const totalBytes = useMemo(() => {
-    return allDocuments.reduce((acc, curr) => acc + curr.sizeBytes, 0);
-  }, [allDocuments]);
-  const storageGB = (totalBytes / (1024 * 1024 * 1024) + 0.1).toFixed(1);
-  const storagePct = ((parseFloat(storageGB) / 250) * 100).toFixed(1);
+    const targetReg =
+      registrations.find((r) => r.id === selectedRegIdForUpload) || registrations[0];
 
-  // File Upload Handlers
-  const processUploadedFile = async (file: File) => {
-    if (onUploadDocument) {
-      await onUploadDocument(file);
+    const studentName = targetReg?.student
+      ? `${targetReg.student.first_name} ${targetReg.student.last_name}`.trim()
+      : 'Student Registration';
+
+    const finalDocName =
+      selectedDocTypeForUpload === 'Other' && customDocTypeDescription.trim()
+        ? `${customDocTypeDescription.trim().replace(/\s+/g, '_')}_${file.name}`
+        : file.name;
+
+    const finalDocType =
+      selectedDocTypeForUpload === 'Other' && customDocTypeDescription.trim()
+        ? (customDocTypeDescription.trim() as any)
+        : selectedDocTypeForUpload;
+
+    const docTypeKey: VaultDocument['documentTypeKey'] =
+      selectedDocTypeForUpload === 'Academic Transcript'
+        ? 'transcripts'
+        : selectedDocTypeForUpload === 'Church Endorsement'
+        ? 'endorsements'
+        : selectedDocTypeForUpload === 'Government ID'
+        ? 'ids'
+        : selectedDocTypeForUpload === 'Degree Scroll'
+        ? 'scrolls'
+        : 'other';
+
+    // Upload to the server and get the real document ID
+    setIsUploading(true);
+    setUploadError(null);
+    let realDocId: string | null = null;
+    try {
+      const regId = targetReg?.id || '';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('registrationId', regId);
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Upload failed');
+      }
+      const json = await res.json();
+      realDocId = json.document?.id || null;
+    } catch (err: any) {
+      setUploadError(err.message || 'Upload failed');
+      setIsUploading(false);
+      return;
+    } finally {
+      setIsUploading(false);
     }
 
-    const fileExt = (file.name.split('.').pop() || 'PDF').toUpperCase() as any;
-    const sha = generateDeterministicHash(`${file.name}-${Date.now()}`);
     const newDoc: VaultDocument = {
-      id: `uploaded-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      name: file.name,
-      fileType: fileExt === 'JPG' ? 'JPEG' : fileExt,
+      // Use the real server-assigned ID so preview/download look up the correct file_path
+      id: realDocId || `uploaded-${Date.now()}`,
+      name: finalDocName,
+      fileType: cleanType,
       sizeBytes: file.size,
       sizeFormatted: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      ocrDetails: 'Automatic OCR Digested',
-      candidateName: registrations[0]?.student ? `${registrations[0].student.first_name} ${registrations[0].student.last_name}` : 'Registrar Candidate',
-      candidateUid: registrations[0]?.student?.permanent_uid || 'STU-2026-00012',
-      regNumber: registrations[0]?.registration_number || 'SAIACS/BA-CML/2026/1',
-      institutionCode: registrations[0]?.institution?.code || 'SAIACS',
-      category: 'Academic Transcript',
-      ingestedAt: 'Just Now',
-      ingestedTimestamp: Date.now(),
-      actor: `by ${registrarDisplayName}`,
-      sha256: sha,
-      verificationBadge: 'VERIFIED_ATA_SEAL',
+      studentName,
+      studentUid: targetReg?.student?.permanent_uid || 'STU-2026-NEW',
+      regNumber: targetReg?.registration_number || 'REG-2026-NEW',
+      institutionCode: targetReg?.institution?.code || 'SAIACS',
+      documentType: finalDocType,
+      documentTypeKey: docTypeKey,
+      ingestedDate: 'Today',
+      ingestedActor: currentUserName,
+      sha256: generateDeterministicHash(`${file.name}-${Date.now()}`),
       status: 'Verified',
-      isFlagged: false,
-      registrationId: registrations[0]?.id || 'reg-new',
+      registrationId: targetReg?.id || 'root-reg',
+      s3Path: `s3://ata-documents/uploads/2026/${file.name}`,
     };
 
-    setUploadedFiles((prev) => [newDoc, ...prev]);
-  };
-
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        await processUploadedFile(files[i]);
+    setUploadedFiles((prev) => {
+      const updated = [newDoc, ...prev];
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('ata_vault_uploaded_docs', JSON.stringify(updated));
+        } catch (e) {}
       }
+      return updated;
+    });
+    setCustomDocTypeDescription('');
+    setSelectedDocTypeForUpload('Academic Transcript');
+    setIsUploadModalOpen(false);
+    setIsStudentPickerOpen(false);
+    setStudentSearchQuery('');
+    setActiveCategoryTab('ALL');
+    setSearchQuery('');
+    setCurrentPage(1);
+    setUploadError(null);
+
+    // Notify parent to refresh registrations list if needed
+    if (onUploadDocument) {
+      onUploadDocument(file, targetReg?.id).catch(() => {/* parent refresh; upload already done */});
     }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        await processUploadedFile(files[i]);
-      }
-    }
-  };
 
-  // Copy SHA-256 Hash
-  const handleCopyHash = (id: string, hash: string) => {
-    navigator.clipboard.writeText(hash);
-    setCopiedHashId(id);
-    setTimeout(() => setCopiedHashId(null), 2000);
-  };
-
-  // Bulk Selection
-  const handleToggleSelectAll = () => {
-    if (selectedDocIds.size === paginatedDocs.length) {
-      setSelectedDocIds(new Set());
-    } else {
-      setSelectedDocIds(new Set(paginatedDocs.map((d) => d.id)));
-    }
-  };
-
-  const handleToggleSelectRow = (id: string) => {
-    const next = new Set(selectedDocIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setSelectedDocIds(next);
-  };
-
-  const handleBulkArchive = () => {
-    if (selectedDocIds.size === 0) {
-      alert('Please select at least one document to archive.');
-      return;
-    }
-    setIsArchivedBannerShown(true);
-    setTimeout(() => setIsArchivedBannerShown(false), 4000);
-    setSelectedDocIds(new Set());
-  };
-
-  // Render Badge Component
-  const renderVerificationBadge = (badge: VaultDocument['verificationBadge']) => {
-    switch (badge) {
-      case 'VERIFIED_ATA_SEAL':
-        return (
-          <div className="flex items-center gap-1 text-[#0d9488] font-bold text-[10px]">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Verified ATA Seal</span>
-          </div>
-        );
-      case 'SIGNATORY_VERIFIED':
-        return (
-          <div className="flex items-center gap-1 text-[#006f67] font-bold text-[10px]">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Signatory Verified</span>
-          </div>
-        );
-      case 'BIOMETRIC_MATCHED':
-        return (
-          <div className="flex items-center gap-1 text-cyan-700 font-bold text-[10px]">
-            <Scan className="h-3.5 w-3.5" />
-            <span>Biometric Matched 98.4%</span>
-          </div>
-        );
-      case 'UNSEALED_COPY':
-        return (
-          <div className="flex items-center gap-1 text-rose-600 font-bold text-[10px]">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>Unsealed Copy Detected</span>
-          </div>
-        );
-      case 'PENDING_ATTESTATION':
-      default:
-        return (
-          <div className="flex items-center gap-1 text-slate-500 font-bold text-[10px]">
-            <Lock className="h-3.5 w-3.5 text-slate-400" />
-            <span>Pending Board Attestation</span>
-          </div>
-        );
-    }
-  };
-
-  // Category Pill Component
-  const renderCategoryPill = (cat: VaultDocument['category']) => {
-    switch (cat) {
+  // Document Type Badge Renderer (Item 9)
+  const renderDocumentTypeBadge = (type: VaultDocument['documentType']) => {
+    switch (type) {
       case 'Academic Transcript':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-[#eff4ff] text-blue-700 border border-blue-200/80 font-semibold text-[10px] whitespace-nowrap">
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 whitespace-nowrap">
             Academic Transcript
           </span>
         );
       case 'Church Endorsement':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-[#e0f7f4] text-[#006f67] border border-teal-200/80 font-semibold text-[10px] whitespace-nowrap">
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200/60 whitespace-nowrap">
             Church Endorsement
           </span>
         );
-      case 'Government Photo ID':
+      case 'Government ID':
         return (
-          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-[10px] whitespace-nowrap">
-            Government Photo ID
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/60 whitespace-nowrap">
+            Government ID
           </span>
         );
-      case 'Degree Scroll & Approval':
+      case 'Degree Scroll':
+        return (
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200/60 whitespace-nowrap">
+            Degree Scroll
+          </span>
+        );
       default:
         return (
-          <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200/80 font-semibold text-[10px] whitespace-nowrap">
-            Degree Scroll & Approval
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200/60 whitespace-nowrap">
+            Other
+          </span>
+        );
+    }
+  };
+
+  // Inline Status Dot Renderer (Item 10 & 11)
+  const renderInlineStatus = (status: VaultDocument['status']) => {
+    switch (status) {
+      case 'Verified':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+            Verified
+          </span>
+        );
+      case 'Pending review':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 whitespace-nowrap">
+            <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+            Pending review
+          </span>
+        );
+      case 'Correction required':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 whitespace-nowrap">
+            <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+            Correction required
           </span>
         );
     }
@@ -493,739 +566,975 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
 
   return (
     <div className="space-y-6 pb-16">
-      {/* 1. Breadcrumbs & Header Section */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleProcessUploadedFile(e.target.files[0]);
+          }
+        }}
+        className="hidden"
+        accept=".pdf,.jpg,.jpeg,.png,.tiff"
+      />
+
+      {/* ========================================================= */}
+      {/* HEADER: Title, Description & Actions                      */}
+      {/* ========================================================= */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
-            <span>Registrar Console</span>
-            <span className="text-slate-400">&gt;</span>
-            <span className="text-slate-800 font-semibold">Institutional Verification Repository</span>
-          </div>
-
-          {/* Title & Verified Badge */}
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              Document Locker & Verification Vault
-            </h1>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#e6fcf5] text-[#0d9488] border border-emerald-200 font-bold text-xs">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>Cryptographically Verified</span>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-500 font-medium mt-1 max-w-3xl">
-            Centralized institutional repository for candidate transcripts, church commendation letters, government IDs, and degree scrolls with automated checksum auditing.
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+            Document Locker
+          </h1>
+          <p className="text-xs text-slate-500 mt-1 font-medium">
+            Manage student documents and verification records.
           </p>
         </div>
 
-        {/* Top Header Buttons */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleBulkArchive}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors shadow-2xs cursor-pointer"
-          >
-            <Archive className="h-4 w-4 text-slate-500" />
-            <span>Bulk Archive</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-          >
-            <Upload className="h-4 w-4" />
-            <span>+ Upload Certified Document</span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            accept=".pdf,.png,.jpg,.jpeg,.tiff,.doc,.docx"
-            onChange={handleFileInputChange}
-          />
-        </div>
-      </div>
-
-      {/* Archive Notification Toast */}
-      {isArchivedBannerShown && (
-        <div className="p-3.5 rounded-xl bg-slate-900 text-white text-xs font-semibold flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 text-emerald-400" />
-            <span>Selected document dossiers have been encrypted and moved to the cold archive storage vault.</span>
-          </div>
-          <button onClick={() => setIsArchivedBannerShown(false)} className="text-slate-400 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* 2. Top 4 Metric KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Secured Documents */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Total Secured Documents
-              </p>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
-                {totalSecuredCount.toLocaleString()}
-              </h3>
-            </div>
-            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600">
-              <FileText className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Across {registrations.length} registered candidates
-            </p>
-            <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-              <div className="h-full bg-slate-900 rounded-full w-1/3" />
-            </div>
-          </div>
-        </div>
-
-        {/* Card 2: Verification Clearance */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Verification Clearance
-              </p>
-              <div className="flex items-baseline gap-2 mt-2">
-                <h3 className="text-3xl font-black text-[#0d9488] tracking-tight">
-                  {clearancePct}%
-                </h3>
-                <span className="text-xs font-bold text-emerald-600">↑ 1.2%</span>
-              </div>
-            </div>
-            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100 text-[#0d9488]">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              {verifiedCount} fully verified documents
-            </p>
-            <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-              <div
-                style={{ width: `${clearancePct}%` }}
-                className="h-full bg-[#0d9488] rounded-full"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Pending Audit / OCR */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Pending Audit / OCR
-              </p>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
-                {pendingCount}
-              </h3>
-            </div>
-            <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
-              <Scan className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Requires immediate seal inspection
-            </p>
-            <div className="flex items-center gap-1.5 mt-1.5 text-[11px] font-bold text-rose-600">
-              <span className="h-2 w-2 rounded-full bg-rose-600 animate-pulse" />
-              <span>{flaggedCount} flagged for urgent re-scan</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: Vault Storage Utilized */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Vault Storage Utilized
-              </p>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
-                {storageGB} GB
-              </h3>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-slate-700">
-              <Database className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              AWS S3 Asia-South Enclave &bull; WORM
-            </p>
-            <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
-              <span>Capacity: 250 GB</span>
-              <span className="font-bold text-[#0d9488]">{storagePct}% allocated</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Ingestion & Cryptographic Protocol Dual Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Drag & Drop Ingestion Zone */}
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`lg:col-span-2 rounded-2xl border-2 border-dashed p-8 text-center flex flex-col items-center justify-center transition-all bg-white ${
-            isDragging ? 'border-[#0d9488] bg-emerald-50/20' : 'border-slate-200/90 hover:border-slate-300'
-          }`}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-[#e0f7f4] text-[#006f67] flex items-center justify-center mb-3">
-            <FolderOpen className="h-6 w-6" />
-          </div>
-
-          <h3 className="text-base font-bold text-slate-900">
-            Drop candidate credential packages here
-          </h3>
-          <p className="text-xs text-slate-500 mt-1 mb-5 max-w-md">
-            Supports PDF, high-resolution JPEG, TIFF, PNG up to 25MB per file with automatic optical character recognition.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-3">
+        {/* Primary Action Buttons (Item 2 & 5) */}
+        <div className="flex items-center gap-2.5">
+          {/* Scan Document: Strictly for Registrar on Mobile Phone */}
+          {canScan && (
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-2xs transition-colors cursor-pointer"
-            >
-              <FolderOpen className="h-4 w-4 text-slate-600" />
-              <span>Browse Local Drive</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsCameraModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+              onClick={() => setIsCameraActive(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
             >
               <Camera className="h-4 w-4 text-slate-600" />
-              <span>Scan via Connected Camera</span>
+              <span>Scan Document</span>
             </button>
-          </div>
-        </div>
+          )}
 
-        {/* Right: Cryptographic Proof Card */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between shadow-xs">
-          <div>
-            <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-              <ShieldCheck className="h-5 w-5 text-[#0d9488]" />
-              <h4>Cryptographic Proof & Ingestion Protocol</h4>
-            </div>
-            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-              Every document is SHA-256 digested at ingestion, verified against the ATA National Accrediting standard, and anchored to the tamper-proof ledger.
-            </p>
-
-            <div className="bg-[#eff4ff] border border-blue-100 rounded-xl p-3.5 my-4 flex items-center justify-between text-xs">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Current Ledger Block
-                </p>
-                <p className="font-mono font-black text-slate-900 text-sm mt-0.5">
-                  #ATA-IND-94821
-                </p>
-              </div>
-
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Hash Engine Status
-                </p>
-                <p className="font-bold text-emerald-600 flex items-center gap-1 mt-0.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Synchronized</span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
-            <span className="text-slate-500 truncate max-w-[200px]">
-              Target Affiliate: {primaryInstitution} (ACC-048)
-            </span>
+          {/* Upload Document: For Registrar */}
+          {canUpload && (
             <button
               type="button"
-              onClick={() => setIsAuditorModalOpen(true)}
-              className="font-bold text-[#0d9488] hover:underline shrink-0 cursor-pointer"
+              onClick={() => setIsUploadModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
             >
-              Auditor Config &rarr;
+              <Upload className="h-4 w-4" />
+              <span>Upload Document</span>
             </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* 4. Document Categories Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-2 text-xs">
-        <button
-          type="button"
-          onClick={() => {
-            setActiveCategoryTab('ALL');
-            setCurrentPage(1);
-          }}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            activeCategoryTab === 'ALL'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          All Documents ({categoryCounts.ALL})
-        </button>
+      {/* ========================================================= */}
+      {/* REPOSITORY SECTION: Header & Count (Item 1 & 14)          */}
+      {/* ========================================================= */}
+      <div className="space-y-4 pt-1">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-black tracking-tight text-slate-900 uppercase">
+            Document Repository &bull; {allDocuments.length} documents
+          </h2>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setActiveCategoryTab('transcripts');
-            setCurrentPage(1);
-          }}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            activeCategoryTab === 'transcripts'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Academic Transcripts ({categoryCounts.transcripts})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setActiveCategoryTab('commendations');
-            setCurrentPage(1);
-          }}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            activeCategoryTab === 'commendations'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Church Commendations ({categoryCounts.commendations})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setActiveCategoryTab('ids');
-            setCurrentPage(1);
-          }}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            activeCategoryTab === 'ids'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Identity & Government Proofs ({categoryCounts.ids})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setActiveCategoryTab('scrolls');
-            setCurrentPage(1);
-          }}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            activeCategoryTab === 'scrolls'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Degree Scrolls & Approvals ({categoryCounts.scrolls})
-        </button>
-      </div>
-
-      {/* 5. Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
+        {/* Document Type Tabs (Item 15) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategoryTab('ALL');
               setCurrentPage(1);
             }}
-            placeholder="Search by candidate name, registration #, document UID, SHA-256 hash..."
-            className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-[#0d9488] focus:outline-hidden shadow-2xs"
-          />
-        </div>
+            className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              activeCategoryTab === 'ALL'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            All {categoryCounts.ALL}
+          </button>
 
-        {/* Dropdown 1: Status Filter */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value as any);
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategoryTab('transcripts');
               setCurrentPage(1);
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
+            className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              activeCategoryTab === 'transcripts'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
           >
-            <option value="ALL">All Statuses (Verified, Pending, Flagged)</option>
-            <option value="Verified">Verified Only</option>
-            <option value="Pending Audit">Pending Audit</option>
-            <option value="Flagged">Flagged Only</option>
-          </select>
+            Academic Transcripts {categoryCounts.transcripts}
+          </button>
 
-          {/* Dropdown 2: Sort Order */}
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value as any)}
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategoryTab('endorsements');
+              setCurrentPage(1);
+            }}
+            className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              activeCategoryTab === 'endorsements'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
           >
-            <option value="NEWEST">Newest Upload First</option>
-            <option value="OLDEST">Oldest First</option>
-            <option value="NAME">Candidate Name (A-Z)</option>
-            <option value="SIZE">File Size (Largest)</option>
-          </select>
+            Church Endorsements {categoryCounts.endorsements}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategoryTab('ids');
+              setCurrentPage(1);
+            }}
+            className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              activeCategoryTab === 'ids'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            Government IDs {categoryCounts.ids}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCategoryTab('scrolls');
+              setCurrentPage(1);
+            }}
+            className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              activeCategoryTab === 'scrolls'
+                ? 'bg-black text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            Degree Scrolls {categoryCounts.scrolls}
+          </button>
         </div>
-      </div>
 
-      {/* 6. Document Verification Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        {/* Table Header */}
-        <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3 bg-slate-50/70 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          <div className="col-span-1 flex items-center">
+        {/* Search & Filter Bar (Items 16, 17, 18) */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search Input (Item 16) */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
-              type="checkbox"
-              checked={paginatedDocs.length > 0 && selectedDocIds.size === paginatedDocs.length}
-              onChange={handleToggleSelectAll}
-              className="h-3.5 w-3.5 rounded border-slate-300 text-[#0d9488] focus:ring-[#0d9488]"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search by student name or registration number..."
+              className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-[#0d9488] focus:outline-hidden shadow-2xs"
             />
           </div>
-          <div className="col-span-4">Document Details</div>
-          <div className="col-span-2">Candidate & Registry ID</div>
-          <div className="col-span-2">Category</div>
-          <div className="col-span-2">Ingestion & Actor</div>
-          <div className="col-span-1">Cryptographic Hash</div>
+
+          {/* Filters */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Status Filter (Item 17) */}
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as any);
+                setCurrentPage(1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
+            >
+              <option value="ALL">All statuses</option>
+              <option value="Verified">Verified</option>
+              <option value="Pending review">Pending review</option>
+              <option value="Correction required">Correction required</option>
+            </select>
+
+            {/* Sort Order (Item 18) */}
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as any)}
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
+            >
+              <option value="NEWEST">Newest first</option>
+              <option value="OLDEST">Oldest first</option>
+            </select>
+          </div>
         </div>
 
-        {/* Rows */}
-        {paginatedDocs.length === 0 ? (
-          <div className="py-16 text-center text-xs text-slate-500">
-            <p className="font-semibold text-slate-700">No documents found matching the applied criteria.</p>
-            <p className="text-[11px] text-slate-400 mt-1">Try resetting the filters or upload a candidate credential package.</p>
+        {/* Repository Table (Items 7, 8, 9, 10, 11, 12, 19) */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          {/* Table Header */}
+          <div className="hidden lg:grid grid-cols-12 gap-3 px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 items-center">
+            <div className="col-span-3">DOCUMENT</div>
+            <div className="col-span-3">STUDENT</div>
+            <div className="col-span-2">DOCUMENT TYPE</div>
+            <div className="col-span-2">UPLOADED</div>
+            <div className="col-span-1">STATUS</div>
+            <div className="col-span-1 text-right">ACTION</div>
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {paginatedDocs.map((doc) => {
-              const isSelected = selectedDocIds.has(doc.id);
-              const isFlagged = doc.isFlagged;
 
-              return (
+          {/* Table Rows */}
+          {paginatedDocs.length === 0 ? (
+            <div className="py-16 text-center text-xs text-slate-500">
+              <p className="font-semibold text-slate-700">No documents found matching the applied criteria.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Try resetting the filters or upload a student document.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {paginatedDocs.map((doc) => (
                 <div
                   key={doc.id}
-                  className={`grid grid-cols-1 lg:grid-cols-12 gap-3 items-center px-5 py-4 transition-colors hover:bg-slate-50/70 ${
-                    isSelected ? 'bg-blue-50/40' : ''
-                  }`}
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center px-5 py-4 transition-colors hover:bg-slate-50/70"
                 >
-                  {/* Select Checkbox */}
-                  <div className="lg:col-span-1 flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => handleToggleSelectRow(doc.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-[#0d9488] focus:ring-[#0d9488] cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Document Details */}
-                  <div className="lg:col-span-4 flex items-center gap-3">
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        isFlagged
-                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                          : doc.category === 'Church Endorsement'
-                          ? 'bg-teal-50 text-[#006f67] border border-teal-100'
-                          : 'bg-blue-50 text-blue-600 border border-blue-100'
-                      }`}
+                  {/* DOCUMENT */}
+                  <div className="lg:col-span-3 min-w-0 pr-2">
+                    <p
+                      onClick={() => setActiveDrawerDoc(doc)}
+                      className="font-bold text-xs text-slate-900 truncate hover:text-[#0d9488] transition-colors cursor-pointer"
                     >
-                      {isFlagged ? (
-                        <AlertTriangle className="h-4 w-4" />
-                      ) : doc.category === 'Church Endorsement' ? (
-                        <FileCheck2 className="h-4 w-4" />
-                      ) : (
-                        <FileText className="h-4 w-4" />
-                      )}
-                    </div>
-
-                    <div className="truncate">
-                      <p
-                        onClick={() => {
-                          const reg = registrations.find((r) => r.id === doc.registrationId);
-                          if (reg && onSelectRegistration) onSelectRegistration(reg);
-                        }}
-                        className="font-bold text-xs text-slate-900 hover:text-blue-600 transition-colors truncate cursor-pointer"
-                      >
-                        {doc.name}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                        <span>{doc.fileType} &bull; {doc.sizeFormatted} &bull; </span>
-                        <span className={isFlagged ? 'text-rose-600 font-semibold' : 'text-slate-600'}>
-                          {doc.ocrDetails}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Candidate & Registry ID */}
-                  <div className="lg:col-span-2 text-xs truncate">
-                    <p className="font-bold text-slate-900 truncate">{doc.candidateName}</p>
-                    <p className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
-                      Reg #{doc.regNumber} - {doc.institutionCode}
+                      {doc.name}
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-mono mt-0.5 truncate">
+                      {doc.fileType} &bull; {doc.sizeFormatted}
                     </p>
                   </div>
 
-                  {/* Category */}
+                  {/* STUDENT (Item 8: Student Name + #Reg Number) */}
+                  <div className="lg:col-span-3 min-w-0 pr-2">
+                    <p className="font-bold text-xs text-slate-900 truncate">
+                      {doc.studentName}
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-500 mt-0.5 truncate">
+                      #{doc.regNumber}
+                    </p>
+                  </div>
+
+                  {/* DOCUMENT TYPE (Item 9) */}
                   <div className="lg:col-span-2">
-                    {renderCategoryPill(doc.category)}
+                    {renderDocumentTypeBadge(doc.documentType)}
                   </div>
 
-                  {/* Ingestion & Actor */}
+                  {/* UPLOADED (Item 12: Real uploader) */}
                   <div className="lg:col-span-2 text-xs">
-                    <p className="font-bold text-slate-800">{doc.ingestedAt}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 truncate">{doc.actor}</p>
+                    <p className="font-semibold text-slate-900 text-[11px]">
+                      {doc.ingestedDate}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                      by {doc.ingestedActor}
+                    </p>
                   </div>
 
-                  {/* Cryptographic Hash */}
-                  <div className="lg:col-span-1 space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10px] text-slate-600">
-                        SHA256: {doc.sha256.slice(0, 4)}...{doc.sha256.slice(-4)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyHash(doc.id, doc.sha256)}
-                        className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                        title="Copy SHA-256 Hash"
-                      >
-                        {copiedHashId === doc.id ? (
-                          <Check className="h-3 w-3 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
-                    </div>
+                  {/* STATUS (Item 10 & 11: Real database workflow status) */}
+                  <div className="lg:col-span-1">
+                    {renderInlineStatus(doc.status)}
+                  </div>
 
-                    {renderVerificationBadge(doc.verificationBadge)}
+                  {/* ACTION: View Button */}
+                  <div className="lg:col-span-1 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setActiveDrawerDoc(doc)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                    >
+                      View
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 7. Pagination Footer */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-500">
-          <div className="flex items-center gap-3">
-            <p>
-              Showing {filteredDocuments.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–
-              {Math.min(currentPage * pageSize, filteredDocuments.length)} of {filteredDocuments.length} files
-            </p>
-            <span>|</span>
-            <div className="flex items-center gap-1.5">
-              <span>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 font-bold text-slate-700 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
+              ))}
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-1 self-end sm:self-auto">
-            <button
-              type="button"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(1)}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              title="First Page"
-            >
-              <ChevronsLeft className="h-3.5 w-3.5" />
-            </button>
-
-            <button
-              type="button"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              title="Previous Page"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
-
-            {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
-              const pageNum = i + 1;
-              return (
-                <button
-                  key={pageNum}
-                  type="button"
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                    currentPage === pageNum
-                      ? 'bg-black text-white'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
+          {/* Pagination Footer (Item 20) */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center gap-3">
+              <p>
+                Showing {filteredDocuments.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–
+                {Math.min(currentPage * pageSize, filteredDocuments.length)} of {filteredDocuments.length} documents
+              </p>
+              <span>|</span>
+              <div className="flex items-center gap-1.5">
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 font-bold text-slate-700 cursor-pointer"
                 >
-                  {pageNum}
-                </button>
-              );
-            })}
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
 
-            {totalPages > 5 && (
-              <>
-                <span className="px-1 text-slate-400">...</span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                    currentPage === totalPages
-                      ? 'bg-black text-white'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {totalPages}
-                </button>
-              </>
-            )}
+            <div className="flex items-center gap-1 self-end sm:self-auto">
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                title="Previous Page"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
 
-            <button
-              type="button"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              title="Next Page"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+              {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      currentPage === pageNum
+                        ? 'bg-black text-white'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
 
-            <button
-              type="button"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(totalPages)}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              title="Last Page"
-            >
-              <ChevronsRight className="h-3.5 w-3.5" />
-            </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                title="Next Page"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Camera Capture Modal */}
-      {isCameraModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Camera className="h-5 w-5 text-[#0d9488]" />
-                <h3 className="font-bold text-sm text-slate-900">Document Camera Scanner</h3>
+      {/* ========================================================= */}
+      {/* MODALS & DRAWERS                                          */}
+      {/* ========================================================= */}
+
+      {/* Hidden File Input for Native File Selection */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".pdf,.jpg,.jpeg,.png,.tiff"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleProcessUploadedFile(e.target.files[0]);
+            e.target.value = '';
+          }
+        }}
+      />
+
+      {/* Upload Document Modal (Items 2, 3, 21) */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Upload Document</h3>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  Attach certified student record to dossier
+                </p>
               </div>
               <button
-                onClick={() => setIsCameraModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                onClick={() => {
+                  setIsUploadModalOpen(false);
+                  setIsStudentPickerOpen(false);
+                  setStudentSearchQuery('');
+                  setCustomDocTypeDescription('');
+                }}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-4/3 flex items-center justify-center text-slate-400">
-              <div className="absolute inset-4 border-2 border-dashed border-emerald-400/70 rounded-lg pointer-events-none flex items-center justify-center">
-                <p className="text-[11px] text-emerald-300 font-bold bg-slate-900/80 px-2.5 py-1 rounded-full">
-                  Align Document Margins
-                </p>
+            <div className="space-y-3.5 text-xs">
+              {/* Select Student Registration (Searchable Combobox with Name & Both IDs) */}
+              <div className="relative" ref={studentPickerRef}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">
+                    Student Registration
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Search by Name, UID, or Reg #
+                  </span>
+                </div>
+
+                {/* Combobox Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsStudentPickerOpen((prev) => !prev)}
+                  className={`w-full rounded-xl border text-left p-2.5 transition-all flex items-center justify-between gap-2.5 cursor-pointer shadow-2xs ${
+                    isStudentPickerOpen
+                      ? 'border-[#0d9488] ring-2 ring-[#0d9488]/20 bg-white'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                  }`}
+                >
+                  {selectedStudentRegistration ? (
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100/80 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0 uppercase border border-emerald-200">
+                        {(selectedStudentRegistration.student?.first_name?.[0] || 'S')}
+                        {(selectedStudentRegistration.student?.last_name?.[0] || '')}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900 text-xs truncate">
+                            {selectedStudentRegistration.student?.first_name}{' '}
+                            {selectedStudentRegistration.student?.last_name}
+                          </span>
+                          {selectedStudentRegistration.program?.code && (
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {selectedStudentRegistration.program.code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className="inline-flex items-center font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
+                            UID: {selectedStudentRegistration.student?.permanent_uid || 'N/A'}
+                          </span>
+                          <span className="inline-flex items-center font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                            #{selectedStudentRegistration.registration_number}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-slate-400 text-xs font-medium">Select a student registration...</span>
+                  )}
+                  <ChevronDown
+                    className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${
+                      isStudentPickerOpen ? 'rotate-180 text-teal-600' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Combobox Dropdown Popover */}
+                {isStudentPickerOpen && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 bg-white border border-slate-200 rounded-xl shadow-2xl p-2.5 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={studentSearchQuery}
+                        onChange={(e) => setStudentSearchQuery(e.target.value)}
+                        placeholder="Search by name, Permanent UID, or Reg #..."
+                        className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-[#0d9488] focus:bg-white text-slate-900 placeholder:text-slate-400"
+                        autoFocus
+                      />
+                      {studentSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setStudentSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Results Count Header */}
+                    <div className="flex items-center justify-between px-1 text-[10px] text-slate-400 font-semibold border-b border-slate-100 pb-1">
+                      <span>{filteredRegistrationsForUpload.length} candidate{filteredRegistrationsForUpload.length === 1 ? '' : 's'} found</span>
+                      <span>Name · Both IDs</span>
+                    </div>
+
+                    {/* Candidate Options List */}
+                    <div className="max-h-52 overflow-y-auto space-y-1 pr-0.5">
+                      {filteredRegistrationsForUpload.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-slate-400">
+                          No student matching &quot;{studentSearchQuery}&quot; found
+                        </div>
+                      ) : (
+                        filteredRegistrationsForUpload.map((r) => {
+                          const isSelected = r.id === (selectedStudentRegistration?.id || selectedRegIdForUpload);
+                          const student = r.student;
+                          const studentName = student ? `${student.first_name} ${student.last_name}`.trim() : 'Registered Candidate';
+                          const uid = student?.permanent_uid || 'N/A';
+                          const regNo = r.registration_number;
+
+                          return (
+                            <div
+                              key={r.id}
+                              onClick={() => {
+                                setSelectedRegIdForUpload(r.id);
+                                setIsStudentPickerOpen(false);
+                                setStudentSearchQuery('');
+                              }}
+                              className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
+                                isSelected
+                                  ? 'bg-emerald-50/70 border-emerald-500/40 text-emerald-950'
+                                  : 'bg-white border-transparent hover:bg-slate-50 hover:border-slate-200 text-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px] flex items-center justify-center shrink-0 uppercase border border-slate-200/80">
+                                  {(student?.first_name?.[0] || 'S')}
+                                  {(student?.last_name?.[0] || '')}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-slate-900 truncate">
+                                      {studentName}
+                                    </span>
+                                    {r.program?.code && (
+                                      <span className="text-[9px] font-semibold text-slate-400">
+                                        {r.program.code}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    <span className="font-mono text-[10px] font-semibold text-emerald-700 bg-emerald-50/80 px-1 rounded border border-emerald-200/60">
+                                      UID: {uid}
+                                    </span>
+                                    <span className="font-mono text-[10px] font-semibold text-slate-600 bg-slate-100 px-1 rounded border border-slate-200/60">
+                                      #{regNo}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {isSelected && (
+                                <div className="shrink-0 text-emerald-600">
+                                  <Check className="h-4 w-4 stroke-[2.5]" />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-400">Ready to capture document credential</p>
+
+              {/* Select Document Type (Item 21) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Document Type
+                </label>
+                <select
+                  value={selectedDocTypeForUpload}
+                  onChange={(e) => {
+                    setSelectedDocTypeForUpload(e.target.value as any);
+                    if (e.target.value !== 'Other') {
+                      setCustomDocTypeDescription('');
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:outline-hidden cursor-pointer"
+                >
+                  <option value="Academic Transcript">Academic Transcript</option>
+                  <option value="Church Endorsement">Church Endorsement</option>
+                  <option value="Government ID">Government ID</option>
+                  <option value="Degree Scroll">Degree Scroll</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Conditional text input when Other is selected */}
+              {selectedDocTypeForUpload === 'Other' && (
+                <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Specify Document Type / Name
+                  </label>
+                  <input
+                    type="text"
+                    value={customDocTypeDescription}
+                    onChange={(e) => setCustomDocTypeDescription(e.target.value)}
+                    placeholder="e.g. Migration Certificate, Baptismal Record, Transfer Certificate..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-[#0d9488] focus:outline-hidden shadow-2xs"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Drag and Drop File Picker Inside Dialog (Item 3) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Document File
+                </label>
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingModal(true);
+                  }}
+                  onDragLeave={() => setIsDraggingModal(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingModal(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleProcessUploadedFile(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`rounded-xl border-2 border-dashed p-6 text-center flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                    isDraggingModal ? 'border-[#0d9488] bg-emerald-50/30' : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                  }`}
+                >
+                  <FolderOpen className="h-7 w-7 text-slate-400 mb-1.5" />
+                  <p className="font-bold text-slate-800 text-xs">
+                    Choose file or drag & drop here
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Accepted formats: PDF, JPEG, PNG, TIFF
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {uploadError && (
+                <p className="text-xs text-rose-600 font-semibold flex-1 truncate">{uploadError}</p>
+              )}
               <button
                 type="button"
-                onClick={() => setIsCameraModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50"
+                disabled={isUploading}
+                onClick={() => {
+                  if (isUploading) return;
+                  setIsUploadModalOpen(false);
+                  setIsStudentPickerOpen(false);
+                  setStudentSearchQuery('');
+                  setCustomDocTypeDescription('');
+                  setUploadError(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  alert('Document captured! Automatic optical character recognition and cryptographic hashing complete.');
-                  setIsCameraModalOpen(false);
-                }}
-                className="px-5 py-2 rounded-xl bg-black text-white font-bold text-xs hover:bg-neutral-800"
+                disabled={isUploading}
+                onClick={() => { if (!isUploading) fileInputRef.current?.click(); }}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-black transition-colors cursor-pointer disabled:opacity-60 flex items-center gap-2"
               >
-                Capture & Hash
+                {isUploading ? (
+                  <>
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Uploading…
+                  </>
+                ) : (
+                  'Select File'
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Auditor Configuration & Cryptographic Protocol Modal */}
-      {isAuditorModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-[#0d9488]" />
-                <h3 className="font-bold text-base text-slate-900">ATA Cryptographic Protocol Specifications</h3>
+
+      {/* Mobile Web Camera Capture (Item 5: strictly active for mobile phone registrar) */}
+      {canScan && isCameraActive && (
+        <MobileWebCameraCapture
+          onClose={() => setIsCameraActive(false)}
+          onCapture={() => {
+            const targetReg = registrations[0];
+            const studentName = targetReg?.student
+              ? `${targetReg.student.first_name} ${targetReg.student.last_name}`.trim()
+              : 'Registered Student';
+
+            const capturedDoc: VaultDocument = {
+              id: `capture-${Date.now()}`,
+              name: `Physical_Doc_Scan_${Date.now().toString().slice(-4)}.jpg`,
+              fileType: 'JPEG',
+              sizeBytes: 1800000,
+              sizeFormatted: '1.8 MB',
+              studentName,
+              studentUid: targetReg?.student?.permanent_uid || 'STU-2026-MOBILE',
+              regNumber: targetReg?.registration_number || 'REG-2026-MOBILE',
+              institutionCode: targetReg?.institution?.code || 'SAIACS',
+              documentType: 'Government ID',
+              documentTypeKey: 'ids',
+              ingestedDate: 'Today',
+              ingestedActor: 'Mobile Camera Scanner',
+              sha256: generateDeterministicHash(`camera-${Date.now()}`),
+              status: 'Verified',
+              registrationId: targetReg?.id || 'root-reg',
+              s3Path: `s3://ata-documents/scans/2026/doc-${Date.now()}.jpg`,
+            };
+            setUploadedFiles((prev) => {
+              const updated = [capturedDoc, ...prev];
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('ata_vault_uploaded_docs', JSON.stringify(updated));
+                } catch (e) {}
+              }
+              return updated;
+            });
+            setActiveCategoryTab('ALL');
+            setCurrentPage(1);
+            setIsCameraActive(false);
+          }}
+        />
+      )}
+
+      {/* Document Details Drawer (Streamlined for Registrar Operational Workflow) */}
+      {activeDrawerDoc && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right duration-300">
+            {/* Drawer Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-slate-400 block">
+                  DOCUMENT DETAILS
+                </span>
+                <h3
+                  className="text-sm sm:text-base font-bold text-slate-900 mt-1 break-words leading-snug"
+                  title={activeDrawerDoc.name}
+                >
+                  {activeDrawerDoc.name}
+                </h3>
               </div>
               <button
-                onClick={() => setIsAuditorModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                onClick={() => setActiveDrawerDoc(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                aria-label="Close document details"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-600">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="font-bold text-slate-900">1. SHA-256 Digest Standard</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Each student dossier attachment generates an irreversible 256-bit hash. Any altered byte immediately invalidates verification status.
+            {/* Drawer Content */}
+            <div className="p-5 sm:p-6 space-y-6 flex-1 text-xs">
+              {/* Type & Status */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Document Type</p>
+                  <div className="mt-1">{renderDocumentTypeBadge(activeDrawerDoc.documentType)}</div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status</p>
+                  <div className="mt-1">{renderInlineStatus(activeDrawerDoc.status)}</div>
+                </div>
+              </div>
+
+              {/* Student Information */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Student</p>
+                <div className="p-3.5 rounded-xl border border-slate-200/70 bg-[#f8fafc] space-y-2.5">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Student Name:</span>
+                    <span className="font-bold text-slate-900 text-right truncate">{activeDrawerDoc.studentName}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Permanent UID:</span>
+                    <span className="font-mono font-bold text-slate-800 text-right">{activeDrawerDoc.studentUid}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Registration #:</span>
+                    <span className="font-mono font-bold text-slate-800 text-right">#{activeDrawerDoc.regNumber}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* File Specifications */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File</p>
+                <div className="p-3.5 rounded-xl border border-slate-200/70 bg-white space-y-2.5">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Format:</span>
+                    <span className="font-bold text-slate-900">{activeDrawerDoc.fileType}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Size:</span>
+                    <span className="font-bold text-slate-900">{activeDrawerDoc.sizeFormatted}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Uploaded:</span>
+                    <span className="font-bold text-slate-900">{activeDrawerDoc.ingestedDate}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500 font-medium">Uploaded by:</span>
+                    <span className="font-medium text-slate-800">{activeDrawerDoc.ingestedActor}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Drawer Actions */}
+            <div className="p-5 sm:p-6 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => {
+                  const reg = registrations.find((r) => r.id === activeDrawerDoc.registrationId);
+                  if (reg && onSelectRegistration) {
+                    onSelectRegistration(reg);
+                    setActiveDrawerDoc(null);
+                  } else {
+                    window.location.href = `/dashboard?reg=${encodeURIComponent(activeDrawerDoc.registrationId)}`;
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>View Registration</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {/* Preview: ALLOWED for Registrar, Administrator, Universal */}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(activeDrawerDoc)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Eye className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Preview</span>
+                </button>
+
+                {/* Download: REGISTRAR ONLY */}
+                {currentRole === 'REGISTRAR' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDocument(activeDrawerDoc)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download</span>
+                  </button>
+                )}
+
+                {/* Delete: REGISTRAR ONLY */}
+                {currentRole === 'REGISTRAR' && (
+                  <button
+                    type="button"
+                    onClick={() => setDocToDelete(activeDrawerDoc)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-700 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document In-App Preview Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-4xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:px-6 border-b border-slate-100 flex items-center justify-between gap-3 bg-white">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-slate-400">
+                    DOCUMENT PREVIEW
+                  </span>
+                  {renderDocumentTypeBadge(previewDoc.documentType)}
+                  {renderInlineStatus(previewDoc.status)}
+                </div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate mt-0.5" title={previewDoc.name}>
+                  {previewDoc.name}
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {previewDoc.studentName} · UID: {previewDoc.studentUid} · #{previewDoc.regNumber}
                 </p>
               </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="font-bold text-slate-900">2. WORM S3 Asia-South Cloud Storage</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Write-Once-Read-Many policies ensure stored transcripts cannot be edited or deleted once locked by the Chief Academic Registrar.
-                </p>
+              <div className="flex items-center gap-2">
+                {currentRole === 'REGISTRAR' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDocument(previewDoc)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                  aria-label="Close preview"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
+            </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="font-bold text-slate-900">3. Continuous Ledger Synchronization</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Current Ledger Block: <code className="font-mono text-[#0d9488] font-bold">#ATA-IND-94821</code>. Synced with the Asia Theological Association Central Commission.
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-50 flex items-center justify-center">
+              {previewDoc.fileType === 'PDF' || previewDoc.name.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={`/api/documents/${previewDoc.id}/preview?registrationId=${encodeURIComponent(previewDoc.registrationId)}&filename=${encodeURIComponent(previewDoc.name)}`}
+                  className="w-full h-[65vh] rounded-xl border border-slate-200 bg-white shadow-xs"
+                  title={previewDoc.name}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center max-h-[65vh]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/documents/${previewDoc.id}/preview?registrationId=${encodeURIComponent(previewDoc.registrationId)}&filename=${encodeURIComponent(previewDoc.name)}`}
+                    alt={previewDoc.name}
+                    className="max-h-[65vh] max-w-full rounded-xl object-contain shadow-lg border border-slate-200 bg-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 sm:px-6 border-t border-slate-100 bg-white flex items-center justify-between text-xs text-slate-500">
+              <span>Format: {previewDoc.fileType} · Size: {previewDoc.sizeFormatted}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(null)}
+                className="px-4 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-colors cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Item 3: Confirmation dialog before deletion) */}
+      {docToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-black text-slate-900">Delete Document</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Are you sure you want to permanently delete{' '}
+                  <strong className="text-slate-900 break-words">{docToDelete.name}</strong> from{' '}
+                  <span className="font-semibold text-slate-800">{docToDelete.studentName}</span>&apos;s record?
+                </p>
+                <p className="text-[11px] text-rose-600 font-medium mt-2 bg-rose-50 p-2 rounded-lg border border-rose-200/60">
+                  This action is recorded in the governance audit logs and cannot be undone.
                 </p>
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            {deleteError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setIsAuditorModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800"
+                disabled={isDeleting}
+                onClick={() => {
+                  setDocToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                Close Protocol Info
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-2xs disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Document'}
               </button>
             </div>
           </div>

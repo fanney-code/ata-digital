@@ -409,10 +409,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Building2 className="h-5 w-5 text-[#3c8c8a] shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none">
-                    Active Affiliate
+                    Assigned Institution
                   </p>
                   <p className="mt-1 text-xs font-bold text-slate-900 leading-snug">
-                    South Asia Instit<br />Advanced Christ
+                    South Asia Institute of Advanced Christian Studies
                   </p>
                 </div>
               </div>

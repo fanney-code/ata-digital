@@ -5,8 +5,6 @@ import { UserRole, Registration } from '@/lib/types';
 import { useAuth } from '@/lib/context/AuthContext';
 import { PortalLayout } from '@/components/shell/PortalLayout';
 import { DocumentVaultView } from '@/components/documents/DocumentVaultView';
-import { CentralDocumentVaultView } from '@/components/admin/CentralDocumentVaultView';
-import { UniversalDocumentVaultView } from '@/components/documents/UniversalDocumentVaultView';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
@@ -23,9 +21,9 @@ export default function DocumentsPage() {
     }
   }, [user]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isSilent = false) => {
     if (authLoading || !user) return;
-    setLoading(true);
+    if (!isSilent) setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/documents', { credentials: 'include' });
@@ -36,9 +34,9 @@ export default function DocumentsPage() {
       const data = await res.json();
       setRegistrations(data.registrations);
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch vault document records');
+      if (!isSilent) setError(err.message || 'Failed to fetch vault document records');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [user, authLoading]);
 
@@ -49,26 +47,31 @@ export default function DocumentsPage() {
   }, [authLoading, loadData]);
 
   /**
-   * Document upload uses multipart FormData sent to the BFF.
-   * The BFF verifies institution ownership server-side before uploading.
-   * Preserves the existing file upload behavior (File object → Supabase Storage).
+   * Document upload is handled directly inside DocumentVaultView so it can
+   * capture the real server-assigned document ID for preview/download.
+   * This callback is called after the upload completes to keep the
+   * registrations list in sync.
    */
-  const handleUploadDocument = async (file: File) => {
-    const regId = registrations[0]?.id || 'default-reg';
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('registrationId', regId);
+  const handleUploadDocument = async (_file: File, _registrationId?: string) => {
+    await loadData(true);
+  };
 
-    const res = await fetch('/api/documents/upload', {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Upload failed');
+
+  const handleDeleteDocument = async (docId: string, registrationId?: string) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}?registrationId=${encodeURIComponent(registrationId || '')}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Delete failed');
+      }
+      await loadData(true);
+    } catch (err: any) {
+      console.warn('Document delete error:', err.message);
+      throw err;
     }
-    await loadData();
   };
 
   const handleSelectRegistration = (reg: Registration) => {
@@ -85,35 +88,20 @@ export default function DocumentsPage() {
     <PortalLayout
       currentRole={role}
       onRoleChange={setRole}
-      title={
-        role === 'UNIVERSAL'
-          ? 'Central Document Locker & Verification Vault'
-          : role === 'ADMINISTRATOR'
-          ? 'Central Document Locker & Verification Vault'
-          : 'Document Locker & Verification Vault'
-      }
+      title="Document Locker"
     >
       {loading ? (
         <LoadingSkeleton />
       ) : error ? (
         <ErrorAlert message={error} onRetry={loadData} />
-      ) : role === 'UNIVERSAL' ? (
-        <UniversalDocumentVaultView
-          registrations={registrations}
-          onSelectRegistration={handleSelectRegistration}
-          onUploadDocument={handleUploadDocument}
-        />
-      ) : role === 'ADMINISTRATOR' ? (
-        <CentralDocumentVaultView
-          registrations={registrations}
-          onSelectRegistration={handleSelectRegistration}
-          onUploadDocument={handleUploadDocument}
-        />
       ) : (
         <DocumentVaultView
           registrations={registrations}
+          currentRole={role}
           onSelectRegistration={handleSelectRegistration}
           onUploadDocument={handleUploadDocument}
+          onDeleteDocument={handleDeleteDocument}
+          onRefresh={() => loadData(true)}
         />
       )}
     </PortalLayout>

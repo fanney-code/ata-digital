@@ -216,7 +216,24 @@ interface UniversalDocumentVaultViewProps {
   onUploadDocument?: (file: File) => Promise<void>;
 }
 
+import { DocumentVaultView } from '@/components/documents/DocumentVaultView';
+
 export const UniversalDocumentVaultView: React.FC<UniversalDocumentVaultViewProps> = ({
+  registrations = [],
+  onSelectRegistration,
+  onUploadDocument,
+}) => {
+  return (
+    <DocumentVaultView
+      registrations={registrations}
+      currentRole="UNIVERSAL"
+      onSelectRegistration={onSelectRegistration}
+      onUploadDocument={onUploadDocument}
+    />
+  );
+};
+
+const _unused_UniversalDocumentVaultView: React.FC<UniversalDocumentVaultViewProps> = ({
   registrations = [],
   onSelectRegistration,
   onUploadDocument,
