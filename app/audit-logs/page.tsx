@@ -5,8 +5,7 @@ import { UserRole, AuditLog } from '@/lib/types';
 import { useAuth } from '@/lib/context/AuthContext';
 import { fetchAuditLogs } from '@/lib/api/supabase-service';
 import { PortalLayout } from '@/components/shell/PortalLayout';
-import { AuditGovernanceView } from '@/components/admin/AuditGovernanceView';
-import { UniversalAuditGovernanceView } from '@/components/admin/UniversalAuditGovernanceView';
+import { AuditLogView } from '@/components/audit/AuditLogView';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 export default function AuditLogsPage() {
@@ -14,6 +13,7 @@ export default function AuditLogsPage() {
   const [role, setRole] = useState<UserRole>(user?.role || 'REGISTRAR');
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.role) {
@@ -23,9 +23,12 @@ export default function AuditLogsPage() {
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchAuditLogs();
       setLogs(data);
+    } catch {
+      setError('Unable to load audit activity. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -36,28 +39,15 @@ export default function AuditLogsPage() {
   }, []);
 
   return (
-    <PortalLayout
-      currentRole={role}
-      onRoleChange={setRole}
-      title={
-        role === 'UNIVERSAL'
-          ? 'System Audit & Governance Logs'
-          : 'Audit & Governance Logs'
-      }
-    >
+    <PortalLayout currentRole={role} onRoleChange={setRole} title="Audit Log">
       {loading ? (
         <LoadingSkeleton />
-      ) : role === 'UNIVERSAL' ? (
-        <UniversalAuditGovernanceView
-          logs={logs}
-          currentRole={role}
-          onRefresh={loadData}
-        />
       ) : (
-        <AuditGovernanceView
+        <AuditLogView
           logs={logs}
           currentRole={role}
           onRefresh={loadData}
+          error={error}
         />
       )}
     </PortalLayout>

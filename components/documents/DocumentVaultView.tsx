@@ -1318,8 +1318,8 @@ export const DocumentVaultView: React.FC<DocumentVaultViewProps> = ({
 
       {/* Document Details Drawer (Streamlined for Registrar Operational Workflow) */}
       {activeDrawerDoc && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white max-h-[90vh] rounded-2xl shadow-2xl flex flex-col justify-between overflow-y-auto animate-in zoom-in-95 duration-200">
             {/* Drawer Header */}
             <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
