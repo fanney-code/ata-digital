@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Registration, RegistrationType, WorkflowStatus } from '@/lib/types';
-import { updateRegistrationAndStudent } from '@/lib/api/supabase-service';
 import {
   X,
   Save,
@@ -70,20 +69,31 @@ export const EditRegistrationModal: React.FC<EditRegistrationModalProps> = ({
     setSuccessMessage('');
 
     try {
-      await updateRegistrationAndStudent(registration.id, registration.student_id, {
-        student: {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          email: email.trim(),
-          phone: phone.trim() || undefined,
-        },
-        registration: {
-          academic_year: academicYear,
-          registration_type: regType,
-          status: status,
-          notes: notes.trim(),
-        },
+      const res = await fetch(`/api/registrations/${registration.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId: registration.student_id,
+          student: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            email: email.trim(),
+            phone: phone.trim() || undefined,
+          },
+          registration: {
+            academic_year: academicYear,
+            registration_type: regType,
+            status: status,
+            notes: notes.trim(),
+          },
+        }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update registration record.');
+      }
 
       setSuccessMessage('Student registration updated successfully!');
       setTimeout(() => {

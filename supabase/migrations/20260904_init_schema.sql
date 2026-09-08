@@ -122,14 +122,14 @@ ON CONFLICT (email) DO NOTHING;
 
 -- Seed Data: Institutions (Valid UUID Hex)
 INSERT INTO public.institutions (id, name, code) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Institute of Technology & Engineering', 'ITE'),
+  ('11111111-1111-1111-1111-111111111111', 'New India Bible Seminary', 'NIBS'),
   ('22222222-2222-2222-2222-222222222222', 'College of Business & Public Policy', 'CBPP'),
   ('33333333-3333-3333-3333-333333333333', 'Academy of Health & Medical Sciences', 'AHMS')
 ON CONFLICT (code) DO NOTHING;
 
 -- Seed Data: Departments (Valid UUID Hex using 'd')
 INSERT INTO public.departments (id, institution_id, name, code) VALUES
-  ('d1111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', 'Computer Science & Software', 'CS'),
+  ('d1111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', 'Theology', 'THEO'),
   ('d2222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', 'Electrical & Electronics', 'EE'),
   ('d3333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'Business Administration', 'BA'),
   ('d4444444-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', 'Clinical Medicine', 'CM')
@@ -137,7 +137,7 @@ ON CONFLICT (institution_id, code) DO NOTHING;
 
 -- Seed Data: Programs (Valid UUID Hex using 'a')
 INSERT INTO public.programs (id, department_id, name, code, degree_level) VALUES
-  ('a1111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'B.Sc. Software Engineering', 'BS-SE', 'UNDERGRADUATE'),
+  ('a1111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'Bachelor of Theology', 'BTH', 'UNDERGRADUATE'),
   ('a2222222-2222-2222-2222-222222222222', 'd1111111-1111-1111-1111-111111111111', 'M.Sc. Artificial Intelligence', 'MS-AI', 'POSTGRADUATE'),
   ('a3333333-3333-3333-3333-333333333333', 'd2222222-2222-2222-2222-222222222222', 'B.Sc. Electrical Engineering', 'BS-EE', 'UNDERGRADUATE'),
   ('a4444444-4444-4444-4444-444444444444', 'd3333333-3333-3333-3333-333333333333', 'Bachelor of Business Administration', 'BBA', 'UNDERGRADUATE'),

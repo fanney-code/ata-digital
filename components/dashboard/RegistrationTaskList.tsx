@@ -7,23 +7,28 @@ interface RegistrationTaskListProps {
   registrations: Registration[];
   onSelectRegistration: (reg: Registration) => void;
   onViewAll?: () => void;
+  searchQuery?: string;
 }
 
 export const RegistrationTaskList: React.FC<RegistrationTaskListProps> = ({
   registrations,
   onSelectRegistration,
   onViewAll,
+  searchQuery = '',
 }) => {
-  const taskRegs = registrations.filter(
-    (r) => r.status === 'DRAFT' || r.status === 'CORRECTION_REQUIRED' || r.status === 'RESUBMITTED'
-  );
+  const isSearching = Boolean(searchQuery && searchQuery.trim());
+  const taskRegs = isSearching
+    ? registrations
+    : registrations.filter(
+        (r) => r.status === 'DRAFT' || r.status === 'CORRECTION_REQUIRED' || r.status === 'RESUBMITTED'
+      );
 
   return (
     <div className="space-y-3">
       {/* Section Title */}
       <div className="flex items-center justify-between">
         <h3 className="text-base font-bold text-slate-900 tracking-tight">
-          Registrar Tasks
+          {isSearching ? `Search Results (${taskRegs.length})` : 'Registrar Tasks'}
         </h3>
         {onViewAll && (
           <button
@@ -38,7 +43,9 @@ export const RegistrationTaskList: React.FC<RegistrationTaskListProps> = ({
       {/* Task Cards List */}
       {taskRegs.length === 0 ? (
         <div className="bg-white border border-slate-200/90 rounded-xl p-8 text-center text-xs text-slate-500">
-          No pending tasks requiring registrar action.
+          {isSearching
+            ? `No registrations found matching "${searchQuery}".`
+            : 'No pending tasks requiring registrar action.'}
         </div>
       ) : (
         <div className="space-y-3">

@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Registration, WorkflowStatus, UserRole } from '@/lib/types';
 import { StatusBadge } from '../dashboard/StatusBadge';
-import { Search, Plus, ArrowRight, FileCheck2, Filter } from 'lucide-react';
+import { Search, ArrowRight, FileCheck2, Filter } from 'lucide-react';
 
 interface RegistrationListProps {
   registrations: Registration[];
   currentRole: UserRole;
   onSelectRegistration: (reg: Registration) => void;
-  onNewRegistration: () => void;
+  onNewRegistration?: () => void;
+  externalSearchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
 }
 
 export const RegistrationList: React.FC<RegistrationListProps> = ({
@@ -15,9 +17,17 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
   currentRole,
   onSelectRegistration,
   onNewRegistration,
+  externalSearchQuery,
+  onSearchQueryChange,
 }) => {
   const [activeTab, setActiveTab] = useState<WorkflowStatus | 'ALL'>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
+
+  React.useEffect(() => {
+    if (externalSearchQuery !== undefined) {
+      setSearchQuery(externalSearchQuery);
+    }
+  }, [externalSearchQuery]);
 
   const filteredRegistrations = registrations.filter((reg) => {
     // Tab status filter
@@ -68,16 +78,6 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
             </p>
           </div>
         </div>
-
-        {currentRole === 'REGISTRAR' && (
-          <button
-            onClick={onNewRegistration}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-md shadow-blue-500/20 transition-all transform hover:-translate-y-0.5"
-          >
-            <Plus className="h-4 w-4" />
-            + NEW REGISTRATION
-          </button>
-        )}
       </div>
 
       {/* Filter Tabs & Search Bar */}
@@ -89,7 +89,10 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (onSearchQueryChange) onSearchQueryChange(e.target.value);
+              }}
               placeholder="Search Reg #, Student UID, Name..."
               className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             />
@@ -160,49 +163,63 @@ export const RegistrationList: React.FC<RegistrationListProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredRegistrations.map((reg) => (
-                  <tr
-                    key={reg.id}
-                    onClick={() => onSelectRegistration(reg)}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer"
-                  >
-                    <td className="py-3.5 px-4 font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {reg.registration_number}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-900 dark:text-slate-100">
-                        {reg.student ? `${reg.student.first_name} ${reg.student.last_name}` : 'Candidate Record'}
-                      </div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {reg.student?.permanent_uid}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300 font-medium">
-                      {reg.registration_type.replace(/_/g, ' ')}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">
-                      {reg.institution?.name || 'Institution'}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-mono">
-                      {reg.academic_year}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <StatusBadge status={reg.status} size="sm" />
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectRegistration(reg);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-semibold text-xs transition-colors"
-                      >
-                        View Details
-                        <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredRegistrations.map((reg) => {
+                  const startYear = parseInt((reg.academic_year || '2026').split('-')[0], 10);
+                  const isOverdue = new Date().getFullYear() - startYear > 3 && reg.status !== 'APPROVED';
+
+                  return (
+                    <tr
+                      key={reg.id}
+                      onClick={() => onSelectRegistration(reg)}
+                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer ${
+                        isOverdue ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''
+                      }`}
+                    >
+                      <td className="py-3.5 px-4 font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {reg.registration_number}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">
+                          {reg.student ? `${reg.student.first_name} ${reg.student.last_name}` : 'Candidate Record'}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {reg.student?.permanent_uid}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300 font-medium">
+                        {reg.registration_type.replace(/_/g, ' ')}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">
+                        {reg.institution?.name || 'Institution'}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 font-mono">
+                        {reg.academic_year}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <StatusBadge status={reg.status} size="sm" />
+                          {isOverdue && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              Duration Exception (&gt;3 Yrs)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectRegistration(reg);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-semibold text-xs transition-colors"
+                        >
+                          View Details
+                          <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
