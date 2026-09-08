@@ -279,26 +279,41 @@ export async function fetchDepartments(institutionId?: string): Promise<Departme
 }
 
 export async function fetchPrograms(departmentId?: string): Promise<Program[]> {
-  let query = supabase.from('programs').select('*').order('name');
   if (departmentId) {
-    query = query.eq('department_id', departmentId);
+    const { data, error } = await supabase
+      .from('programs')
+      .select('*')
+      .eq('department_id', departmentId)
+      .order('name');
+    if (error) throw error;
+    return data || [];
   }
-  const { data, error } = await query;
+
+  // Authoritatively return the unique program catalog without being truncated by 1000 PostgREST row limit
+  const { data: dept } = await supabase.from('departments').select('id').limit(1).maybeSingle();
+  if (dept?.id) {
+    const { data, error } = await supabase
+      .from('programs')
+      .select('*')
+      .eq('department_id', dept.id)
+      .order('name');
+    if (!error && data && data.length > 0) {
+      return data;
+    }
+  }
+
+  const { data, error } = await supabase.from('programs').select('*').order('name');
   if (error) throw error;
 
-  if (!departmentId) {
-    const seenCodes = new Set<string>();
-    const uniquePrograms: Program[] = [];
-    for (const prog of data || []) {
-      if (!seenCodes.has(prog.code)) {
-        seenCodes.add(prog.code);
-        uniquePrograms.push(prog);
-      }
+  const seenCodes = new Set<string>();
+  const uniquePrograms: Program[] = [];
+  for (const prog of data || []) {
+    if (!seenCodes.has(prog.code)) {
+      seenCodes.add(prog.code);
+      uniquePrograms.push(prog);
     }
-    return uniquePrograms;
   }
-
-  return data || [];
+  return uniquePrograms;
 }
 
 export async function fetchProgramsForInstitution(institutionId: string): Promise<Program[]> {

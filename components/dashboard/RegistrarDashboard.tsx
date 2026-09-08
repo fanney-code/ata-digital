@@ -324,14 +324,7 @@ export const RegistrarDashboard: React.FC<RegistrarDashboardProps> = ({
       {/* 1. Top Welcome Banner & Session Control */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          {/* Institutional Region Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[11px] font-bold">
-            <span>{primaryInstitution.toUpperCase()}</span>
-            <span className="text-emerald-400">•</span>
-            <span className="font-medium text-emerald-700">Registry Division (Asia Region 04)</span>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-2.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Welcome back, {registrarName}
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">

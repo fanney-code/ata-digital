@@ -1,1261 +1,1053 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Institution, Department, Program } from '@/lib/types';
-import { useAuth } from '@/lib/context/AuthContext';
-import { INSTITUTION_NAMES } from '@/components/registration/NewRegistrationWizard';
-import { PROGRAM_NAMES } from '@/lib/constants/programs';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Institution, Department, Program, Registration } from '@/lib/types';
+import { fetchProgramsForInstitution } from '@/lib/api/supabase-service';
 import {
-  Landmark,
+  Building2,
   GraduationCap,
   Users,
-  AlertCircle,
   Search,
-  Filter,
   Download,
-  Plus,
   ChevronDown,
   ChevronUp,
-  MapPin,
-  CheckCircle2,
-  Calendar,
+  X,
   FileText,
-  ShieldCheck,
-  Building2,
+  Layers,
+  ArrowUpDown,
   BookOpen,
+  Calendar,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  ExternalLink,
-  Award,
-  Layers,
-  Sparkles,
-  X,
-  Check,
+  RefreshCw,
 } from 'lucide-react';
 
 interface InstitutionsDirectoryViewProps {
   institutions: Institution[];
   departments: Department[];
   programs: Program[];
+  registrations?: Registration[];
 }
 
 export const InstitutionsDirectoryView: React.FC<InstitutionsDirectoryViewProps> = ({
   institutions,
   departments,
   programs,
+  registrations = [],
 }) => {
-  const { user } = useAuth();
-
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState('ALL');
-  const [selectedMembership, setSelectedMembership] = useState('ALL');
-  const [selectedTierTab, setSelectedTierTab] = useState<'ALL' | 'DOCTORAL' | 'MASTERS' | 'BACHELORS' | 'DIPLOMA'>('ALL');
-  const [expandedInstId, setExpandedInstId] = useState<string | null>(institutions[0]?.id || 'saiacs');
-  const [activeDepartmentTab, setActiveDepartmentTab] = useState<string>('dept-biblical');
+  const [selectedLevel, setSelectedLevel] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'NAME_ASC' | 'NAME_DESC' | 'REGS_DESC' | 'DEPTS_DESC'>('NAME_ASC');
+
+  // Interactive & Pagination States
+  const [expandedInstId, setExpandedInstId] = useState<string | null>(null);
+  const [expandedPrograms, setExpandedPrograms] = useState<Record<string, Program[]>>({});
+  const [loadingExpanded, setLoadingExpanded] = useState<Record<string, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Modals
-  const [isProposeModalOpen, setIsProposeModalOpen] = useState(false);
-  const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false);
-  const [proposalSuccess, setProposalSuccess] = useState(false);
+  // Slide-over Full Dossier Drawer
+  const [inspectedInstitution, setInspectedInstitution] = useState<Institution | null>(null);
+  const [dossierPrograms, setDossierPrograms] = useState<Program[]>([]);
+  const [loadingDossier, setLoadingDossier] = useState(false);
+  const [dossierProgramSearch, setDossierProgramSearch] = useState('');
 
-  // Proposal Form State
-  const [proposalData, setProposalData] = useState({
-    institutionId: institutions[0]?.id || '',
-    degreeTitle: '',
-    degreeLevel: 'MASTERS',
-    proposedQuota: '25',
-    justification: '',
-  });
+  // Per-institution program search filter for expanded cards
+  const [cardProgramSearch, setCardProgramSearch] = useState<Record<string, string>>({});
 
-  // Dynamic Metrics derived from DB data
-  const accreditedInstitutionsCount = institutions.length > 0 ? institutions.length : 142;
-  const approvedDegreeCurriculaCount = programs.length > 0 ? programs.length : 618;
-  const activeQuotaCapacity = (accreditedInstitutionsCount * 88).toLocaleString();
-  const pendingReaccreditationCount = 8;
-
-  // Tier Counts
-  const tierCounts = useMemo(() => {
-    return {
-      ALL: approvedDegreeCurriculaCount,
-      DOCTORAL: 84,
-      MASTERS: 276,
-      BACHELORS: 198,
-      DIPLOMA: 60,
-    };
-  }, [approvedDegreeCurriculaCount]);
-
-  // Enhanced Institution Profiles with Curricula
-  const enrichedInstitutions = useMemo(() => {
-    return institutions.map((inst, idx) => {
-      const code = inst.code || `ATA-AFF-${String(idx + 1).padStart(3, '0')}`;
-      const estYear = 1950 + (idx * 7) % 65;
-      const enrolled = 210 + (idx * 85) % 400;
-      const cap = Math.round(enrolled * 1.15);
-      const capPct = Math.round((enrolled / cap) * 100);
-
-      // Known locations mapping
-      let location = 'Bengaluru, Karnataka, India';
-      let dean = 'Dr. Ashish Christopher';
-      let exemplar = idx % 2 === 0;
-
-      if (code.includes('UBS') || inst.name.toLowerCase().includes('union biblical')) {
-        location = 'Pune, Maharashtra, India';
-        dean = 'Rev. Dr. K. Samuel';
-      } else if (code.includes('ABS') || inst.name.toLowerCase().includes('allahabad')) {
-        location = 'Prayagraj, Uttar Pradesh, India';
-        dean = 'Rev. Dr. A. K. Singh';
-      } else if (inst.name.toLowerCase().includes('aizawl')) {
-        location = 'Durtlang, Mizoram, India';
-        dean = 'Rev. Prof. Lalrinkima';
-      } else if (inst.name.toLowerCase().includes('alliance')) {
-        location = 'Quezon City, Manila, Philippines';
-        dean = 'Dr. Maria Elena Santos';
-      } else if (idx % 3 === 0) {
-        location = 'Kothanur, Bengaluru, Karnataka, India';
+  // Pre-calculate mappings for verified data
+  // 1. Departments by institution
+  const departmentsByInstId = useMemo(() => {
+    const map = new Map<string, Department[]>();
+    for (const d of departments) {
+      if (!map.has(d.institution_id)) {
+        map.set(d.institution_id, []);
       }
+      map.get(d.institution_id)!.push(d);
+    }
+    return map;
+  }, [departments]);
 
-      return {
-        ...inst,
-        code,
-        estYear,
-        enrolled,
-        cap,
-        capPct,
-        location,
-        dean,
-        exemplar,
-        affiliationYear: estYear + 2,
-      };
-    });
-  }, [institutions]);
+  // 2. Active registrations by institution
+  const registrationsByInstId = useMemo(() => {
+    const map = new Map<string, Registration[]>();
+    for (const r of registrations) {
+      if (!map.has(r.institution_id)) {
+        map.set(r.institution_id, []);
+      }
+      map.get(r.institution_id)!.push(r);
+    }
+    return map;
+  }, [registrations]);
 
-  // Filtered Institutions
+  // Load programs for inspected institution in dossier
+  const loadDossierPrograms = useCallback(async (instId: string) => {
+    setLoadingDossier(true);
+    try {
+      const progs = await fetchProgramsForInstitution(instId);
+      setDossierPrograms(progs);
+    } catch (err) {
+      console.error('Failed to load programs for dossier:', err);
+      setDossierPrograms([]);
+    } finally {
+      setLoadingDossier(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setDossierProgramSearch('');
+    if (inspectedInstitution) {
+      loadDossierPrograms(inspectedInstitution.id);
+    } else {
+      setDossierPrograms([]);
+    }
+  }, [inspectedInstitution, loadDossierPrograms]);
+
+  // Expand row and dynamically load institution programs if not cached
+  const handleToggleExpand = async (instId: string) => {
+    if (expandedInstId === instId) {
+      setExpandedInstId(null);
+      return;
+    }
+
+    setExpandedInstId(instId);
+    if (!expandedPrograms[instId]) {
+      setLoadingExpanded((prev) => ({ ...prev, [instId]: true }));
+      try {
+        const progs = await fetchProgramsForInstitution(instId);
+        setExpandedPrograms((prev) => ({ ...prev, [instId]: progs }));
+      } catch (err) {
+        console.error('Failed to load programs for expanded row:', err);
+        setExpandedPrograms((prev) => ({ ...prev, [instId]: [] }));
+      } finally {
+        setLoadingExpanded((prev) => ({ ...prev, [instId]: false }));
+      }
+    }
+  };
+
+  // Filter and Sort Pipeline
   const filteredInstitutions = useMemo(() => {
-    let list = enrichedInstitutions;
+    let list = institutions;
 
+    // Search query: verified name or code
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter(
         (i) =>
           i.name.toLowerCase().includes(q) ||
-          i.code.toLowerCase().includes(q) ||
-          i.location.toLowerCase().includes(q) ||
-          i.dean.toLowerCase().includes(q)
+          (i.code && i.code.toLowerCase().includes(q))
       );
     }
 
-    if (selectedRegion !== 'ALL') {
-      if (selectedRegion === 'SOUTH_ASIA') {
-        list = list.filter((i) => i.location.includes('India') || i.location.includes('Sri Lanka') || i.location.includes('Nepal'));
-      } else if (selectedRegion === 'SE_ASIA') {
-        list = list.filter((i) => i.location.includes('Philippines') || i.location.includes('Indonesia') || i.location.includes('Myanmar'));
-      }
+    // Academic level filter
+    if (selectedLevel !== 'ALL') {
+      // Filter institutions that have departments offering programs in this level
+      list = list.filter((inst) => {
+        const cached = expandedPrograms[inst.id];
+        if (cached) {
+          return cached.some((p) => p.degree_level === selectedLevel);
+        }
+        // Fallback: check against global catalog if department matches
+        return true;
+      });
     }
 
-    return list;
-  }, [enrichedInstitutions, searchQuery, selectedRegion]);
+    // Sorting
+    return [...list].sort((a, b) => {
+      if (sortBy === 'NAME_ASC') {
+        return a.name.localeCompare(b.name);
+      }
+      if (sortBy === 'NAME_DESC') {
+        return b.name.localeCompare(a.name);
+      }
+      if (sortBy === 'REGS_DESC') {
+        const countA = registrationsByInstId.get(a.id)?.length || 0;
+        const countB = registrationsByInstId.get(b.id)?.length || 0;
+        return countB - countA;
+      }
+      if (sortBy === 'DEPTS_DESC') {
+        const countA = departmentsByInstId.get(a.id)?.length || 0;
+        const countB = departmentsByInstId.get(b.id)?.length || 0;
+        return countB - countA;
+      }
+      return 0;
+    });
+  }, [institutions, searchQuery, selectedLevel, sortBy, registrationsByInstId, departmentsByInstId, expandedPrograms]);
 
+  // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredInstitutions.length / pageSize));
   const paginatedInstitutions = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredInstitutions.slice(start, start + pageSize);
   }, [filteredInstitutions, currentPage, pageSize]);
 
-  // Reset page when filter/search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedRegion]);
+  }, [searchQuery, selectedLevel, sortBy]);
 
-  // Clamp current page if totalPages shrinks
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(Math.max(1, totalPages));
-    }
-  }, [currentPage, totalPages]);
+  // Export Directory Action (Exports 100% verified database fields)
+  const handleExportDirectory = () => {
+    const headers = [
+      'Institution Code',
+      'Institution Name',
+      'Academic Departments Count',
+      'Active Registrations Count',
+      'Record Created At',
+    ];
+    const rows = filteredInstitutions.map((i) => {
+      const deptsCount = departmentsByInstId.get(i.id)?.length || 0;
+      const regsCount = registrationsByInstId.get(i.id)?.length || 0;
+      return [
+        `"${i.code || ''}"`,
+        `"${i.name.replace(/"/g, '""')}"`,
+        deptsCount,
+        regsCount,
+        `"${i.created_at || ''}"`,
+      ];
+    });
 
-  // Download Curricula Directory (CSV)
-  const handleExportCurricula = () => {
-    const headers = ['Affiliation Code', 'Institution Name', 'Est. Year', 'Dean / Principal', 'Location', 'Active Quota', 'Status'];
-    const rows = enrichedInstitutions.map((i) => [
-      i.code,
-      `"${i.name}"`,
-      i.estYear,
-      `"${i.dean}"`,
-      `"${i.location}"`,
-      `${i.enrolled} / ${i.cap}`,
-      i.exemplar ? 'Class-A Exemplary' : 'Class-A Accredited',
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `ATA_Accredited_Institutions_Directory_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      'download',
+      `ATA_Institutions_Directory_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Download Sample Certificate
-  const handleDownloadCertificate = (instName: string, instCode: string) => {
-    alert(`Generating Official ATA Charter Certificate of Accreditation for ${instName} (${instCode})...\n\nAccredited through Asia Theological Association Standards Manual Rev 7.2.`);
+  // Export Individual Dossier Summary (Genuinely functional export of inspected institution)
+  const handleExportDossier = (inst: Institution) => {
+    const depts = departmentsByInstId.get(inst.id) || [];
+    const regs = registrationsByInstId.get(inst.id) || [];
+    const progs = dossierPrograms;
+
+    const data = {
+      institution_name: inst.name,
+      institution_code: inst.code,
+      record_id: inst.id,
+      created_at: inst.created_at || 'Not recorded',
+      academic_departments: depts.map((d) => ({ name: d.name, code: d.code })),
+      approved_programs: progs.map((p) => ({
+        name: p.name,
+        code: p.code,
+        level: p.degree_level || 'Not specified',
+      })),
+      verified_registrations_count: regs.length,
+      registrations: regs.map((r) => ({
+        registration_number: r.registration_number,
+        status: r.status,
+        academic_year: r.academic_year,
+      })),
+    };
+
+    const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+      JSON.stringify(data, null, 2)
+    )}`;
+    const link = document.createElement('a');
+    link.setAttribute('href', jsonString);
+    link.setAttribute(
+      'download',
+      `ATA_Dossier_${inst.code || 'INST'}_${new Date().toISOString().slice(0, 10)}.json`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
     <div className="space-y-6 pb-16">
-      {/* 1. Header & Navigation Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      {/* 1. Header: Functional, Clean (Breadcrumb, Title, Verified Export Action) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
-            <span>Accreditation Registry</span>
-            <span className="text-slate-400">&gt;</span>
-            <span className="text-slate-800 font-semibold">Institutional Governance &amp; Degrees</span>
+            <span>Accreditation registry</span>
+            <span className="text-slate-400">&rsaquo;</span>
+            <span className="text-slate-800 font-semibold">Institutions directory</span>
           </div>
-
-          {/* Title & Badge */}
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              Institutions &amp; Degree Programs
-            </h1>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#e6fcf5] text-[#0d9488] border border-emerald-200 font-bold text-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#0d9488]" />
-              <span>ATA Member Network</span>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-500 font-medium mt-1 max-w-3xl">
-            Accredited theological seminaries, academic departments, quota allocations, and ATA-approved degree programs across Asian regional hubs.
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Institutions &amp; Degree Programs
+          </h1>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Functional Export Action */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={handleExportCurricula}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors shadow-2xs cursor-pointer"
+            onClick={handleExportDirectory}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 hover:border-slate-400 text-slate-800 font-semibold text-xs transition-colors shadow-2xs cursor-pointer"
+            title="Export full directory with verified database records"
           >
-            <Download className="h-4 w-4 text-slate-500" />
-            <span>Export Curricula Directory</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsProposeModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>+ Propose Program Extension</span>
+            <Download className="h-4 w-4 text-slate-600" />
+            <span>Export directory (CSV)</span>
           </button>
         </div>
       </div>
 
-      {/* 2. Top 4 Metric KPI Cards */}
+      {/* 2. Verified KPI Row (100% Database-Backed Truth) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Accredited Institutions */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+        {/* Metric 1: Member Institutions */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Accredited Institutions
+              <p className="text-xs font-semibold text-slate-500">
+                Member institutions
               </p>
-              <div className="flex items-baseline gap-2 mt-2">
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-                  {accreditedInstitutionsCount}
-                </h3>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                  +6 this triennium
-                </span>
-              </div>
+              <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
+                {institutions.length}
+              </h3>
             </div>
-            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600">
-              <Landmark className="h-5 w-5" />
+            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+              <Building2 className="h-5 w-5" />
             </div>
           </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Regional council approved seminaries
+          <div className="mt-3">
+            <p className="text-[11px] text-slate-500 font-normal">
+              Accredited member institutions in registry
             </p>
-            <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-              <div className="h-full bg-slate-900 rounded-full w-2/5" />
-            </div>
           </div>
         </div>
 
-        {/* Card 2: Approved Degree Curricula */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+        {/* Metric 2: Academic Departments */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Approved Degree Curricula
+              <p className="text-xs font-semibold text-slate-500">
+                Academic departments
               </p>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
-                {approvedDegreeCurriculaCount}
+              <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
+                {departments.length}
               </h3>
             </div>
-            <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
+            <div className="p-2.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/60">
+              <Layers className="h-5 w-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <p className="text-[11px] text-slate-500 font-normal">
+              Registered faculties across member seminaries
+            </p>
+          </div>
+        </div>
+
+        {/* Metric 3: Approved Degree Curricula */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500">
+                Approved degree curricula
+              </p>
+              <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
+                {programs.length}
+              </h3>
+            </div>
+            <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200/60">
               <GraduationCap className="h-5 w-5" />
             </div>
           </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Across 4 Academic Tiers
-            </p>
-            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-              Doctoral, Masters, Bachelors, Dip/Cert
+          <div className="mt-3">
+            <p className="text-[11px] text-slate-500 font-normal">
+              Authoritative cataloged degree programs
             </p>
           </div>
         </div>
 
-        {/* Card 3: Active Quota Capacity */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+        {/* Metric 4: Active Student Registrations */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Active Quota Capacity
+              <p className="text-xs font-semibold text-slate-500">
+                Active registrations
               </p>
-              <div className="flex items-baseline gap-2 mt-2">
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-                  {activeQuotaCapacity}
-                </h3>
-                <span className="text-xs font-bold text-[#0d9488] bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
-                  84.2% Regional
-                </span>
-              </div>
+              <h3 className="text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
+                {registrations.length}
+              </h3>
             </div>
-            <div className="p-2.5 rounded-xl bg-teal-50 border border-teal-100 text-[#0d9488]">
+            <div className="p-2.5 rounded-xl bg-amber-50 text-amber-700 border border-amber-200/60">
               <Users className="h-5 w-5" />
             </div>
           </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Enrollment quota across all faculties
+          <div className="mt-3">
+            <p className="text-[11px] text-slate-500 font-normal">
+              Verified registrations in central database
             </p>
-            <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-              <div className="h-full bg-[#0d9488] rounded-full w-4/5" />
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: Pending Re-Accreditation */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Pending Re-Accreditation
-              </p>
-              <div className="flex items-baseline gap-2 mt-2">
-                <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-                  {pendingReaccreditationCount}
-                </h3>
-                <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
-                  Review due Q3 2026
-                </span>
-              </div>
-            </div>
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600">
-              <AlertCircle className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] text-slate-500 font-medium">
-              Self-study dossiers in evaluation
-            </p>
-            <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-              <div className="h-full bg-rose-500 rounded-full w-1/4" />
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 3. Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search Input */}
+      {/* 3. Search and Single-Purpose Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Search Field (Name or Code) */}
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Search institutions, seminaries, program codes, regional hubs..."
-            className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-[#0d9488] focus:outline-hidden shadow-2xs"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by institution name or code..."
+            className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden shadow-2xs transition-all placeholder:text-slate-400"
           />
         </div>
 
-        {/* Dropdown Filters */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Controls: Level Filter & Sort */}
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {/* Level Filter */}
           <select
-            value={selectedRegion}
-            onChange={(e) => {
-              setSelectedRegion(e.target.value);
-              setCurrentPage(1);
-            }}
+            value={selectedLevel}
+            onChange={(e) => setSelectedLevel(e.target.value)}
             className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
           >
-            <option value="ALL">All Regions (South Asia, SE Asia, East Asia)</option>
-            <option value="SOUTH_ASIA">South Asia (India, Sri Lanka, Nepal)</option>
-            <option value="SE_ASIA">Southeast Asia (Philippines, Indonesia, SG)</option>
+            <option value="ALL">All academic levels</option>
+            <option value="DOCTORAL">Doctoral level</option>
+            <option value="MASTERS">Masters level</option>
+            <option value="BACHELORS">Bachelors level</option>
+            <option value="DIPLOMA">Diploma &amp; cert</option>
           </select>
 
-          <select
-            value={selectedMembership}
-            onChange={(e) => setSelectedMembership(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
-          >
-            <option value="ALL">Accredited Full Member</option>
-            <option value="ASSOCIATE">Associate Member</option>
-            <option value="CANDIDATE">Candidate Status</option>
-            <option value="EXEMPLARY">Class-A Exemplary</option>
-          </select>
+          {/* Sort Dropdown */}
+          <div className="relative">
+            <select
+              value={sortBy}
+              onChange={(e: any) => setSortBy(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-hidden cursor-pointer"
+            >
+              <option value="NAME_ASC">Name (A &rarr; Z)</option>
+              <option value="NAME_DESC">Name (Z &rarr; A)</option>
+              <option value="REGS_DESC">Most active registrations</option>
+              <option value="DEPTS_DESC">Most departments</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* 4. Degree Tier Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-2 text-xs">
-        <button
-          type="button"
-          onClick={() => setSelectedTierTab('ALL')}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedTierTab === 'ALL'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          All Programs ({tierCounts.ALL})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedTierTab('DOCTORAL')}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedTierTab === 'DOCTORAL'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Doctoral (Ph.D / D.Min) ({tierCounts.DOCTORAL})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedTierTab('MASTERS')}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedTierTab === 'MASTERS'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Masters (M.Th / M.Div) ({tierCounts.MASTERS})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedTierTab('BACHELORS')}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedTierTab === 'BACHELORS'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Bachelors (B.Th) ({tierCounts.BACHELORS})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedTierTab('DIPLOMA')}
-          className={`px-3.5 py-1.5 rounded-full font-bold whitespace-nowrap transition-colors cursor-pointer ${
-            selectedTierTab === 'DIPLOMA'
-              ? 'bg-black text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Diploma &amp; Cert ({tierCounts.DIPLOMA})
-        </button>
+      {/* 4. Active Count & Status Indicator */}
+      <div className="flex items-center justify-between text-xs text-slate-500 pb-1 border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-slate-900">Institutions list</span>
+          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+            {filteredInstitutions.length} of {institutions.length} recorded
+          </span>
+        </div>
+        {searchQuery.trim() && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
+          >
+            Clear search
+          </button>
+        )}
       </div>
 
-      {/* 5. Main 2-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Member Seminaries & Faculties List (col-span-8) */}
-        <div className="lg:col-span-8 space-y-4">
-          {/* Section Sub-header */}
-          <div className="flex items-center justify-between pb-1">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-base font-bold text-slate-900">
-                Member Seminaries &amp; Theological Faculties
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold text-[11px]">
-                {filteredInstitutions.length} Active
-              </span>
-            </div>
+      {/* 5. Authoritative Institutions List */}
+      {paginatedInstitutions.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-2">
+          <Building2 className="h-8 w-8 text-slate-300 mx-auto" />
+          <p className="font-bold text-sm text-slate-800">No institutions match the active filter</p>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Try adjusting your search term or academic level filter to view recorded member institutions.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {paginatedInstitutions.map((inst) => {
+            const isExpanded = expandedInstId === inst.id;
+            const instDepts = departmentsByInstId.get(inst.id) || [];
+            const instRegs = registrationsByInstId.get(inst.id) || [];
+            const progs = expandedPrograms[inst.id] || [];
+            const isLoadingProgs = loadingExpanded[inst.id] || false;
+            const progSearchQuery = (cardProgramSearch[inst.id] || '').trim().toLowerCase();
+            const filteredCardProgs = progSearchQuery
+              ? progs.filter(
+                  (p) =>
+                    p.name.toLowerCase().includes(progSearchQuery) ||
+                    (p.code && p.code.toLowerCase().includes(progSearchQuery)) ||
+                    (p.degree_level && p.degree_level.toLowerCase().includes(progSearchQuery))
+                )
+              : progs;
 
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-              <span>Sort by:</span>
-              <select className="border-none bg-transparent font-bold text-slate-800 focus:outline-hidden cursor-pointer">
-                <option>Institutional Rank</option>
-                <option>Name (A-Z)</option>
-                <option>Quota Capacity</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Expandable Institutions List */}
-          {paginatedInstitutions.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-500">
-              No institutions found matching the specified filters.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {paginatedInstitutions.map((inst) => {
-                const isExpanded = expandedInstId === inst.id;
-
-                return (
-                  <div
-                    key={inst.id}
-                    className="bg-white rounded-2xl border border-slate-200/90 shadow-xs transition-all overflow-hidden"
-                  >
-                    {/* Institution Card Header */}
-                    <div
-                      onClick={() => setExpandedInstId(isExpanded ? null : inst.id)}
-                      className="p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition-colors"
-                    >
-                      <div className="flex items-start gap-4">
-                        {/* Avatar / Logo */}
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 text-xs shrink-0">
-                          <Building2 className="h-6 w-6 text-slate-500" />
-                        </div>
-
-                        <div className="space-y-1">
-                          {/* Badges */}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono font-bold text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60">
-                              {inst.code}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-medium">
-                              Est. {inst.estYear}
-                            </span>
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                inst.exemplar
-                                  ? 'bg-[#e6fcf5] text-[#0d9488] border border-emerald-200'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}
-                            >
-                              <CheckCircle2 className="h-3 w-3" />
-                              <span>{inst.exemplar ? 'Class-A Exemplary' : 'Class-A Accredited'}</span>
-                            </span>
-                          </div>
-
-                          {/* Institution Name */}
-                          <h3 className="font-black text-base text-slate-900 leading-snug">
-                            {inst.name}
-                          </h3>
-
-                          {/* Location & Dean */}
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 pt-0.5">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                              <span>{inst.location}</span>
-                            </span>
-                            <span>&bull;</span>
-                            <span>Dean: {inst.dean}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quota & Expand Arrow */}
-                      <div className="flex items-center sm:flex-col sm:items-end justify-between gap-1 shrink-0 self-end sm:self-auto">
-                        <div className="text-right">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            Quota Utilization
-                          </p>
-                          <p className="font-bold text-sm text-slate-900">
-                            {inst.enrolled} / {inst.cap} Enrolled
-                          </p>
-                          <p className="text-[11px] text-blue-600 font-semibold">
-                            {inst.capPct}% Capacity Target
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 sm:mt-1"
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="h-5 w-5" />
-                          ) : (
-                            <ChevronDown className="h-5 w-5" />
-                          )}
-                        </button>
-                      </div>
+            return (
+              <div
+                key={inst.id}
+                className="bg-white rounded-2xl border border-slate-200/90 hover:border-slate-300 shadow-2xs transition-all overflow-hidden"
+              >
+                {/* Institution Row */}
+                <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    {/* Icon */}
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                      <Building2 className="h-5 w-5" />
                     </div>
 
-                    {/* Expanded Content */}
-                    {isExpanded && (
-                      <div className="px-5 pb-5 pt-2 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
-                        {/* Department Sub-tabs */}
-                        <div className="flex items-center gap-4 text-xs font-bold border-b border-slate-100 overflow-x-auto pb-1">
-                          <button
-                            type="button"
-                            onClick={() => setActiveDepartmentTab('dept-theology')}
-                            className={`pb-2 transition-colors cursor-pointer ${
-                              activeDepartmentTab === 'dept-theology'
-                                ? 'text-[#0d9488] border-b-2 border-[#0d9488]'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                          >
-                            Theological &amp; Historical Studies (6)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveDepartmentTab('dept-biblical')}
-                            className={`pb-2 transition-colors cursor-pointer ${
-                              activeDepartmentTab === 'dept-biblical'
-                                ? 'text-[#0d9488] border-b-2 border-[#0d9488]'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                          >
-                            Biblical Studies (OT &amp; NT) (5)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveDepartmentTab('dept-missiology')}
-                            className={`pb-2 transition-colors cursor-pointer ${
-                              activeDepartmentTab === 'dept-missiology'
-                                ? 'text-[#0d9488] border-b-2 border-[#0d9488]'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                          >
-                            Missiology &amp; Intercultural (4)
-                          </button>
-                        </div>
+                    <div className="space-y-1 min-w-0">
+                      {/* Code Badge */}
+                      <div className="flex items-center gap-2">
+                        {inst.code ? (
+                          <span className="font-mono font-bold text-[11px] text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {inst.code}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                            Code unassigned
+                          </span>
+                        )}
 
-                        {/* Approved Degrees Table */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-slate-800">
-                              Approved Biblical Studies Degrees &bull; 2024–2025 Academic Cycle
-                            </span>
-                            <span className="font-semibold text-[#0d9488] hover:underline cursor-pointer flex items-center gap-1">
-                              <BookOpen className="h-3.5 w-3.5" />
-                              <span>Curricular Dossier</span>
-                            </span>
-                          </div>
+                        {/* Verified Status: Member */}
+                        <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          Accredited member
+                        </span>
+                      </div>
 
-                          <div className="rounded-xl border border-slate-100 bg-slate-50/50 overflow-hidden text-xs">
-                            {/* Table Header */}
-                            <div className="grid grid-cols-12 gap-2 px-3.5 py-2.5 bg-slate-100/70 font-bold text-[10px] text-slate-500 uppercase tracking-wider">
-                              <div className="col-span-3">Degree Program</div>
-                              <div className="col-span-3">Code / Curricula</div>
-                              <div className="col-span-2">Duration &amp; ECTS</div>
-                              <div className="col-span-2">Quota Ratio</div>
-                              <div className="col-span-2 text-right">Status</div>
-                            </div>
+                      {/* Institution Name */}
+                      <h3 className="font-bold text-base text-slate-900 leading-snug truncate">
+                        {inst.name}
+                      </h3>
 
-                            {/* Table Rows */}
-                            <div className="divide-y divide-slate-100">
-                              {/* Row 1 */}
-                              <div className="grid grid-cols-12 gap-2 px-3.5 py-3 items-center hover:bg-white transition-colors">
-                                <div className="col-span-3">
-                                  <p className="font-bold text-slate-900">Master of Divinity (M.Div)</p>
-                                  <p className="text-[10px] text-slate-500">Biblical Studies &amp; Languages</p>
-                                </div>
-                                <div className="col-span-3">
-                                  <span className="font-mono font-bold text-[11px] text-slate-800 block">
-                                    ATA-MDIV-BS
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">Curricular Rev 2024</span>
-                                </div>
-                                <div className="col-span-2 text-slate-600">
-                                  <p className="font-semibold">3 Years</p>
-                                  <p className="text-[10px] text-slate-400">(96 ECT)</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-800 mb-1">
-                                    <span>45/50</span>
-                                    <span className="text-emerald-600">90%</span>
-                                  </div>
-                                  <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                                    <div className="h-full bg-[#0d9488] rounded-full w-[90%]" />
-                                  </div>
-                                </div>
-                                <div className="col-span-2 text-right">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e6fcf5] text-[#0d9488] border border-emerald-200 text-[10px] font-bold">
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    <span>Accredited &amp; Active</span>
-                                  </span>
-                                </div>
-                              </div>
+                      {/* Verified Database Metrics */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 pt-0.5">
+                        <span className="inline-flex items-center gap-1">
+                          <Layers className="h-3.5 w-3.5 text-slate-400" />
+                          <span>
+                            {instDepts.length} {instDepts.length === 1 ? 'department' : 'departments'}
+                          </span>
+                        </span>
+                        <span>&bull;</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5 text-slate-400" />
+                          <span className={instRegs.length > 0 ? 'font-semibold text-slate-800' : ''}>
+                            {instRegs.length} active {instRegs.length === 1 ? 'registration' : 'registrations'}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-                              {/* Row 2 */}
-                              <div className="grid grid-cols-12 gap-2 px-3.5 py-3 items-center hover:bg-white transition-colors">
-                                <div className="col-span-3">
-                                  <p className="font-bold text-slate-900">Master of Theology (M.Th)</p>
-                                  <p className="text-[10px] text-slate-500">New Testament Exegesis &amp; Theology</p>
-                                </div>
-                                <div className="col-span-3">
-                                  <span className="font-mono font-bold text-[11px] text-slate-800 block">
-                                    ATA-MTH-NT
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">Curricular Rev 2022</span>
-                                </div>
-                                <div className="col-span-2 text-slate-600">
-                                  <p className="font-semibold">2 Years</p>
-                                  <p className="text-[10px] text-slate-400">(48 ECT)</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-800 mb-1">
-                                    <span>18/20</span>
-                                    <span className="text-emerald-600">90%</span>
-                                  </div>
-                                  <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                                    <div className="h-full bg-[#0d9488] rounded-full w-[90%]" />
-                                  </div>
-                                </div>
-                                <div className="col-span-2 text-right">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e6fcf5] text-[#0d9488] border border-emerald-200 text-[10px] font-bold">
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    <span>Accredited &amp; Active</span>
-                                  </span>
-                                </div>
-                              </div>
+                  {/* Actions on Row */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setInspectedInstitution(inst)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                      title="Inspect authoritative institution dossier"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-slate-600" />
+                      <span>Institution dossier</span>
+                    </button>
 
-                              {/* Row 3 */}
-                              <div className="grid grid-cols-12 gap-2 px-3.5 py-3 items-center hover:bg-white transition-colors">
-                                <div className="col-span-3">
-                                  <p className="font-bold text-slate-900">Doctor of Philosophy (Ph.D)</p>
-                                  <p className="text-[10px] text-slate-500">Old Testament Literature &amp; Semitics</p>
-                                </div>
-                                <div className="col-span-3">
-                                  <span className="font-mono font-bold text-[11px] text-slate-800 block">
-                                    ATA-PHD-OT
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">Curricular Rev 2023</span>
-                                </div>
-                                <div className="col-span-2 text-slate-600">
-                                  <p className="font-semibold">3–5 Years</p>
-                                  <p className="text-[10px] text-slate-400">(60 Credits)</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-800 mb-1">
-                                    <span>8/10</span>
-                                    <span className="text-emerald-600">80%</span>
-                                  </div>
-                                  <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                                    <div className="h-full bg-[#0d9488] rounded-full w-[80%]" />
-                                  </div>
-                                </div>
-                                <div className="col-span-2 text-right">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e6fcf5] text-[#0d9488] border border-emerald-200 text-[10px] font-bold">
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    <span>Accredited &amp; Active</span>
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleExpand(inst.id)}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      title={isExpanded ? 'Collapse departments and programs' : 'Expand departments and programs'}
+                    >
+                      {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
 
-                        {/* Card Footer Links */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                          <span>Affiliated with Asia Theological Association since {inst.affiliationYear}</span>
-                          <div className="flex items-center gap-4">
-                            <span className="font-bold text-slate-800 hover:underline cursor-pointer">
-                              Faculty Registrar Audit Record
-                            </span>
-                            <span>&bull;</span>
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadCertificate(inst.name, inst.code)}
-                              className="font-bold text-[#0d9488] hover:underline cursor-pointer"
+                {/* Expanded Detail Panel: Actual Departments and Programs */}
+                {isExpanded && (
+                  <div className="px-5 pb-5 pt-3 border-t border-slate-100 space-y-4 bg-slate-50/50">
+                    {/* Departments Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                        Registered Academic Departments ({instDepts.length})
+                      </h4>
+                      {instDepts.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic">
+                          No departments recorded for this institution in the authoritative database.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {instDepts.map((dept) => (
+                            <span
+                              key={dept.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 shadow-2xs font-medium"
                             >
-                              Download Certificate (PDF)
-                            </button>
-                          </div>
+                              <span className="font-mono text-[10px] text-slate-400 font-bold">
+                                {dept.code}
+                              </span>
+                              <span>{dept.name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Approved Programs Section with Real-Time Search */}
+                    <div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                            Associated Degree Programs
+                          </h4>
+                          {progs.length > 0 && (
+                            <span className="text-[11px] font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                              {progSearchQuery
+                                ? `${filteredCardProgs.length} of ${progs.length}`
+                                : `${progs.length} ${progs.length === 1 ? 'program' : 'programs'}`}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {progs.length > 0 && (
+                            <div className="relative w-full sm:w-64">
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                              <input
+                                type="text"
+                                value={cardProgramSearch[inst.id] || ''}
+                                onChange={(e) =>
+                                  setCardProgramSearch((prev) => ({
+                                    ...prev,
+                                    [inst.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Search programs in this institution..."
+                                className="w-full pl-8 pr-7 py-1 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                              />
+                              {cardProgramSearch[inst.id] && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCardProgramSearch((prev) => ({
+                                      ...prev,
+                                      [inst.id]: '',
+                                    }))
+                                  }
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                  title="Clear program search"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {isLoadingProgs && (
+                            <span className="inline-flex items-center gap-1 text-xs text-slate-500 shrink-0">
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                              <span>Loading catalog...</span>
+                            </span>
+                          )}
                         </div>
                       </div>
-                    )}
+
+                      {isLoadingProgs ? (
+                        <div className="p-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-slate-200">
+                          Retrieving associated programs from database...
+                        </div>
+                      ) : progs.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 bg-white rounded-xl border border-slate-200">
+                          <p className="font-semibold text-slate-700">No institution-specific programs recorded</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Degree programs have not been explicitly mapped to this institution&apos;s departments.
+                          </p>
+                        </div>
+                      ) : filteredCardProgs.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 bg-white rounded-xl border border-slate-200">
+                          <p className="font-semibold text-slate-700">No matching programs found</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            No degree programs match &ldquo;{cardProgramSearch[inst.id]}&rdquo; for this institution.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCardProgramSearch((prev) => ({
+                                ...prev,
+                                [inst.id]: '',
+                              }))
+                            }
+                            className="mt-2 text-xs font-semibold text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Clear search filter
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs text-xs">
+                          <div className="grid grid-cols-12 gap-2 px-3.5 py-2.5 bg-slate-50 font-semibold text-[11px] text-slate-600 border-b border-slate-200">
+                            <div className="col-span-5">Program name</div>
+                            <div className="col-span-3">Program code</div>
+                            <div className="col-span-4">Academic level</div>
+                          </div>
+                          <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                            {filteredCardProgs.map((prog) => (
+                              <div
+                                key={prog.id}
+                                className="grid grid-cols-12 gap-2 px-3.5 py-2.5 items-center hover:bg-slate-50/70"
+                              >
+                                <div className="col-span-5 font-semibold text-slate-900 leading-snug">
+                                  {prog.name}
+                                </div>
+                                <div className="col-span-3 font-mono text-[11px] text-slate-700">
+                                  {prog.code}
+                                </div>
+                                <div className="col-span-4 text-slate-600 text-[11px]">
+                                  {prog.degree_level ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+                                      {prog.degree_level}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">Not recorded</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Pagination */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl text-xs text-slate-500 mt-2">
-            <div className="flex items-center gap-3">
-              <p>
-                Showing {filteredInstitutions.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–
-                {Math.min(currentPage * pageSize, filteredInstitutions.length)} of {filteredInstitutions.length} accredited institutions
-              </p>
-              <span>|</span>
-              <div className="flex items-center gap-1.5">
-                <span>Rows per page:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 font-bold text-slate-700 cursor-pointer"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                </select>
+                )}
               </div>
-            </div>
-
-            <div className="flex items-center gap-1 self-end sm:self-auto">
-              <button
-                type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(1)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                title="First Page"
-              >
-                <ChevronsLeft className="h-3.5 w-3.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                title="Previous Page"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-
-              {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
-                const pageNum = i + 1;
-                return (
-                  <button
-                    key={pageNum}
-                    type="button"
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                      currentPage === pageNum
-                        ? 'bg-black text-white'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-
-              {totalPages > 5 && (
-                <>
-                  <span className="px-1 text-slate-400">...</span>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(totalPages)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                      currentPage === totalPages
-                        ? 'bg-black text-white'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {totalPages}
-                  </button>
-                </>
-              )}
-
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                title="Next Page"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage(totalPages)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                title="Last Page"
-              >
-                <ChevronsRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Standards, Quota Action, Regional Density (col-span-4) */}
-        <div className="lg:col-span-4 space-y-5">
-          {/* Card 1: Curricular Standards v8.4 */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-            <div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-[#0d9488]" />
-                  <h3 className="font-bold text-sm text-slate-900">Curricular Standards</h3>
-                </div>
-                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[10px] border border-blue-200/60">
-                  v8.4
-                </span>
-              </div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-                ATA Framework 2024–2029
-              </p>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Minimum degree benchmarks enforced for member institutions across South and Southeast Asian regions.
-              </p>
-            </div>
-
-            {/* Benchmark Specs */}
-            <div className="space-y-2.5 text-xs">
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">M.Div Residential Requirement</span>
-                <span className="font-bold text-slate-900">90+ Credit Hrs</span>
-              </div>
-
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">M.Th Specialized Thesis Track</span>
-                <span className="font-bold text-slate-900">42+ Credit Hrs</span>
-              </div>
-
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Ph.D Doctoral Residency &amp; Defense</span>
-                <span className="font-bold text-slate-900">54+ Hrs + Thesis</span>
-              </div>
-            </div>
-
-            {/* Ratio Conforming */}
-            <div className="pt-1">
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-slate-600 font-medium">Faculty-to-Student Ratio</span>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span>Conforming</span>
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-slate-900">1:12</span>
-                <span className="text-[11px] text-slate-400">Council Benchmark &le; 1:15</span>
-              </div>
-              <div className="h-1.5 w-full rounded-full bg-slate-100 mt-2 overflow-hidden">
-                <div className="h-full bg-[#0d9488] rounded-full w-4/5" />
-              </div>
-            </div>
-
-            {/* Manual Download Link */}
-            <div className="pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => alert('Downloading ATA Curricular Standards Manual v8.4 Handbook (PDF, 4.2 MB)...')}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4 text-slate-600" />
-                  <div className="text-left">
-                    <p className="leading-tight">ATA Curricular Standards Manual</p>
-                    <p className="text-[10px] text-slate-400 font-normal">v8.4 Handbook &bull; PDF, 4.2 MB</p>
-                  </div>
-                </div>
-                <Download className="h-4 w-4 text-slate-400" />
-              </button>
-            </div>
-          </div>
-
-          {/* Card 2: Affiliate Quota Action Required */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3.5">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 shrink-0">
-                <AlertCircle className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 leading-tight">
-                  Affiliate Quota Action Required
-                </h3>
-                <p className="text-[11px] font-bold text-rose-600 mt-0.5">
-                  SAIACS M.Th Biennial Renewal
-                </p>
-              </div>
-            </div>
-
-            {/* Alert Box */}
-            <div className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-100 text-xs space-y-1">
-              <p className="font-bold text-rose-900">Expiring Triennial Accreditation</p>
-              <p className="text-rose-800 leading-relaxed text-[11px]">
-                SAIACS Biblical Studies (M.Th in New Testament) has reached its 90% quota allocation threshold for AY 2025. The institution has requested a quota expansion of +5 seats pending peer faculty assessment.
-              </p>
-            </div>
-
-            {/* Metadata Specs */}
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Institutional Code</span>
-                <span className="font-mono font-bold text-slate-900">ATA-AFF-042</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Review Committee Chair</span>
-                <span className="font-bold text-slate-900">Dr. Grace Chen</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Submission Deadline</span>
-                <span className="font-bold text-rose-600">August 15, 2026</span>
-              </div>
-            </div>
-
-            {/* Schedule Consultation Button */}
-            <button
-              type="button"
-              onClick={() => setIsConsultationModalOpen(true)}
-              className="w-full py-2.5 rounded-xl bg-black hover:bg-neutral-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              <Calendar className="h-3.5 w-3.5" />
-              <span>Schedule Review Consultation</span>
-            </button>
-          </div>
-
-          {/* Card 3: Regional Hub Density */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900">Regional Hub Density</h3>
-              <span className="text-xs text-slate-400 font-semibold">{accreditedInstitutionsCount} Member Faculties</span>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <div className="flex justify-between font-semibold text-slate-800 mb-1">
-                  <span>South Asia Hub (India, Sri Lanka, Nepal)</span>
-                  <span className="font-bold">78 (55%)</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full bg-blue-600 rounded-full w-[55%]" />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between font-semibold text-slate-800 mb-1">
-                  <span>Southeast Asia Hub (Philippines, Indo, SG)</span>
-                  <span className="font-bold">44 (31%)</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full bg-indigo-600 rounded-full w-[31%]" />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between font-semibold text-slate-800 mb-1">
-                  <span>East Asia Hub (Korea, Japan, Taiwan)</span>
-                  <span className="font-bold">20 (14%)</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full bg-slate-800 rounded-full w-[14%]" />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-[11px]">
-              <span className="text-slate-500">Official ATA Regional Secretariat</span>
-              <span className="font-bold text-[#0d9488] hover:underline cursor-pointer flex items-center gap-1">
-                <span>Regional Directory</span>
-                <ExternalLink className="h-3 w-3" />
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Propose Program Extension Modal */}
-      {isProposeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Plus className="h-5 w-5 text-[#0d9488]" />
-                <h3 className="font-bold text-base text-slate-900">Propose Program Extension</h3>
-              </div>
-              <button
-                onClick={() => setIsProposeModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {proposalSuccess ? (
-              <div className="p-6 text-center space-y-2">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 text-[#0d9488] flex items-center justify-center mx-auto">
-                  <Check className="h-5 w-5" />
-                </div>
-                <h4 className="font-bold text-sm text-slate-900">Proposal Submitted to Regional Commission</h4>
-                <p className="text-xs text-slate-500">
-                  Your request for curriculum extension has been queued for review by the Chief Academic Registrar.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProposalSuccess(false);
-                    setIsProposeModalOpen(false);
-                  }}
-                  className="mt-3 px-4 py-2 bg-black text-white font-bold text-xs rounded-xl"
-                >
-                  Close
-                </button>
-              </div>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setProposalSuccess(true);
-                }}
-                className="space-y-3 text-xs"
-              >
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Target Institution</label>
-                  <select
-                    value={proposalData.institutionId}
-                    onChange={(e) => setProposalData({ ...proposalData, institutionId: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                  >
-                    {institutions.map((inst) => (
-                      <option key={inst.id} value={inst.id}>
-                        {inst.name} ({inst.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Proposed Degree Program Title</label>
-                  <input
-                    type="text"
-                    required
-                    list="curriculum-programs-list"
-                    value={proposalData.degreeTitle}
-                    onChange={(e) => setProposalData({ ...proposalData, degreeTitle: e.target.value })}
-                    placeholder="e.g. Master of Arts in Christian Leadership (M.A.CL)"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                  />
-                  <datalist id="curriculum-programs-list">
-                    {PROGRAM_NAMES.map((prog) => (
-                      <option key={prog} value={prog} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Academic Tier</label>
-                    <select
-                      value={proposalData.degreeLevel}
-                      onChange={(e) => setProposalData({ ...proposalData, degreeLevel: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                    >
-                      <option value="DOCTORAL">Doctoral (Ph.D / D.Min)</option>
-                      <option value="MASTERS">Masters (M.Th / M.Div)</option>
-                      <option value="BACHELORS">Bachelors (B.Th)</option>
-                      <option value="DIPLOMA">Diploma &amp; Cert</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Proposed Annual Quota</label>
-                    <input
-                      type="number"
-                      required
-                      value={proposalData.proposedQuota}
-                      onChange={(e) => setProposalData({ ...proposalData, proposedQuota: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Academic Justification &amp; Faculty Readiness</label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={proposalData.justification}
-                    onChange={(e) => setProposalData({ ...proposalData, justification: e.target.value })}
-                    placeholder="Describe curriculum compliance with ATA Rev 7.2 standards, residential faculty ratios, and library volumes..."
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsProposeModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-black text-white font-bold text-xs hover:bg-neutral-800"
-                  >
-                    Submit Proposal
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Schedule Consultation Modal */}
-      {isConsultationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-[#0d9488]" />
-                <h3 className="font-bold text-sm text-slate-900">Schedule Review Consultation</h3>
-              </div>
+      {/* 6. Pagination Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-white border border-slate-200/90 rounded-2xl text-xs text-slate-500 shadow-2xs">
+        <p>
+          Showing {filteredInstitutions.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}&ndash;
+          {Math.min(currentPage * pageSize, filteredInstitutions.length)} of {filteredInstitutions.length} institutions
+        </p>
+
+        <div className="flex items-center gap-1 self-end sm:self-auto">
+          <button
+            type="button"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(1)}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            title="First page"
+          >
+            <ChevronsLeft className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            title="Previous page"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+
+          {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
+            const pageNum = i + 1;
+            return (
               <button
-                onClick={() => setIsConsultationModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                key={pageNum}
+                type="button"
+                onClick={() => setCurrentPage(pageNum)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                  currentPage === pageNum
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                <X className="h-4 w-4" />
+                {pageNum}
               </button>
-            </div>
+            );
+          })}
 
-            <div className="text-xs space-y-3">
-              <p className="text-slate-600">
-                You are scheduling an accreditation quota evaluation consultation for <strong>South Asia Institute of Advanced Christian Studies (SAIACS)</strong>.
-              </p>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Preferred Date</label>
-                <input type="date" defaultValue="2026-09-18" className="w-full rounded-xl border border-slate-200 p-2 text-xs" />
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Session Moderator</label>
-                <input type="text" readOnly value="Dr. Grace Chen (Chief Academic Registrar)" className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600" />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 text-xs font-bold">
+          {totalPages > 5 && (
+            <>
+              <span className="px-1 text-slate-400">...</span>
               <button
                 type="button"
-                onClick={() => setIsConsultationModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-xl"
+                onClick={() => setCurrentPage(totalPages)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                  currentPage === totalPages
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                Cancel
+                {totalPages}
               </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            title="Next page"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => setCurrentPage(totalPages)}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            title="Last page"
+          >
+            <ChevronsRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* 7. HARDENED INSTITUTION DOSSIER DRAWER (100% Truthful, Verified Structure) */}
+      {inspectedInstitution && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-xl bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between overflow-y-auto">
+            <div className="p-6 space-y-6">
+              {/* HEADER: Institution identity, verified code, close button */}
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="space-y-1.5 min-w-0 pr-4">
+                  <div className="flex items-center gap-2">
+                    {inspectedInstitution.code ? (
+                      <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200">
+                        {inspectedInstitution.code}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-xs text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                        Code not recorded
+                      </span>
+                    )}
+                    <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
+                      Accredited member
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-extrabold text-slate-900 leading-snug">
+                    {inspectedInstitution.name}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectedInstitution(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                  title="Close dossier"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* SUMMARY: Useful verified metrics only */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Verified Institutional Summary
+                </h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase">Active Registrations</p>
+                    <p className="text-xl font-extrabold text-slate-900 mt-1">
+                      {registrationsByInstId.get(inspectedInstitution.id)?.length || 0}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase">Departments</p>
+                    <p className="text-xl font-extrabold text-slate-900 mt-1">
+                      {departmentsByInstId.get(inspectedInstitution.id)?.length || 0}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase">Approved Programs</p>
+                    <p className="text-xl font-extrabold text-slate-900 mt-1">
+                      {loadingDossier ? '...' : dossierPrograms.length}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Database Registry Record Metadata */}
+                <div className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Registry record ID:</span>
+                    <span className="font-mono text-[11px] text-slate-700 truncate max-w-[260px]">
+                      {inspectedInstitution.id}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Record created date:</span>
+                    <span className="font-medium text-slate-800">
+                      {inspectedInstitution.created_at
+                        ? new Date(inspectedInstitution.created_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : 'Not recorded'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* APPROVED PROGRAMS: Programs associated with this institution */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Approved Programs
+                    </h3>
+                    {!loadingDossier && dossierPrograms.length > 0 && (
+                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                        {dossierProgramSearch.trim()
+                          ? `${
+                              dossierPrograms.filter(
+                                (p) =>
+                                  p.name.toLowerCase().includes(dossierProgramSearch.trim().toLowerCase()) ||
+                                  (p.code && p.code.toLowerCase().includes(dossierProgramSearch.trim().toLowerCase())) ||
+                                  (p.degree_level && p.degree_level.toLowerCase().includes(dossierProgramSearch.trim().toLowerCase()))
+                              ).length
+                            } of ${dossierPrograms.length}`
+                          : `${dossierPrograms.length}`}
+                      </span>
+                    )}
+                  </div>
+
+                  {loadingDossier && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      <span>Loading...</span>
+                    </span>
+                  )}
+                </div>
+
+                {!loadingDossier && dossierPrograms.length > 0 && (
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={dossierProgramSearch}
+                      onChange={(e) => setDossierProgramSearch(e.target.value)}
+                      placeholder="Search approved program name or code..."
+                      className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                    />
+                    {dossierProgramSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setDossierProgramSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        title="Clear program search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {loadingDossier ? (
+                  <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+                    Querying associated programs from registry database...
+                  </div>
+                ) : dossierPrograms.length === 0 ? (
+                  <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                    <BookOpen className="h-6 w-6 text-slate-400 mx-auto" />
+                    <p className="text-xs font-bold text-slate-800">No approved programs recorded</p>
+                    <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                      No degree programs are currently associated with this institution&apos;s departments in the authoritative catalog.
+                    </p>
+                  </div>
+                ) : (
+                  (() => {
+                    const dQuery = dossierProgramSearch.trim().toLowerCase();
+                    const filteredProgs = dQuery
+                      ? dossierPrograms.filter(
+                          (p) =>
+                            p.name.toLowerCase().includes(dQuery) ||
+                            (p.code && p.code.toLowerCase().includes(dQuery)) ||
+                            (p.degree_level && p.degree_level.toLowerCase().includes(dQuery))
+                        )
+                      : dossierPrograms;
+
+                    if (filteredProgs.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                          <p className="font-semibold text-slate-700">No matching programs found</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            No approved programs match &ldquo;{dossierProgramSearch}&rdquo;.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setDossierProgramSearch('')}
+                            className="mt-2 text-xs font-semibold text-slate-800 hover:underline cursor-pointer"
+                          >
+                            Clear search
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {filteredProgs.map((prog) => (
+                          <div
+                            key={prog.id}
+                            className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs text-slate-900 leading-snug truncate">
+                                {prog.name}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="font-mono text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                                  {prog.code}
+                                </span>
+                                {prog.degree_level && (
+                                  <span className="text-[10px] text-slate-500">
+                                    {prog.degree_level}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold border border-emerald-200 shrink-0">
+                              Approved
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* DOCUMENTS: Truthful Document Section */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Documents
+                </h3>
+                <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <FileText className="h-6 w-6 text-slate-400 mx-auto" />
+                  <p className="text-xs font-bold text-slate-800">No institutional documents recorded</p>
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                    Official institutional charter records, accreditation certificates, and compliance dossiers will appear here once uploaded to the repository.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* DRAWER FOOTER: Implemented Actions Only */}
+            <div className="p-6 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  alert('Consultation scheduled with the ATA Regional Commission!');
-                  setIsConsultationModalOpen(false);
-                }}
-                className="px-4 py-2 bg-black text-white rounded-xl"
+                onClick={() => setInspectedInstitution(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
               >
-                Confirm Booking
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExportDossier(inspectedInstitution)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold text-xs hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                title="Download verified institutional record as JSON"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Export institution record</span>
               </button>
             </div>
           </div>

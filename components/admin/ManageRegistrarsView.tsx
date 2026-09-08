@@ -1055,7 +1055,7 @@ export const ManageRegistrarsView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">Provision New Institutional Registrar</h3>
-                  <p className="text-xs text-slate-500">Tier-2 Credential Delegation &amp; FIDO2 Enrolment</p>
+                  <p className="text-xs text-slate-500">Tier-2 Credential Delegation &amp; FIDO2 Enrollment</p>
                 </div>
               </div>
               <button

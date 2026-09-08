@@ -8,7 +8,6 @@ import { useIsMobileDevice, isCaptureEligible } from '@/lib/utils/useIsMobileDev
 import {
   ArrowLeft,
   Shield,
-  ShieldCheck,
   ShieldAlert,
   User,
   Building2,
@@ -641,25 +640,6 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
             </div>
           </div>
 
-          {/* Card 3: ATA Academic Governance Council / Universal Accreditations Registry */}
-          <div className="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 flex items-center justify-between shadow-xs">
-            <div className="space-y-1 max-w-lg">
-              <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[#99efe5] flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                ATA ACADEMIC GOVERNANCE COUNCIL
-              </span>
-              <h4 className="text-base sm:text-lg font-black tracking-tight text-white">
-                Universal Accreditations Registry
-              </h4>
-              <p className="text-xs text-slate-300 font-medium leading-normal">
-                All records in this portal are cryptographically signed with the Central Council key pairs. Any update triggers automatic notifications to {instName} administration.
-              </p>
-            </div>
-
-            <div className="shrink-0 p-3.5 rounded-2xl bg-slate-800 border border-slate-700 text-[#99efe5] shadow-xs">
-              <Award className="h-7 w-7" />
-            </div>
-          </div>
         </div>
 
         {/* ========================================================= */}
@@ -945,38 +925,6 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
         </div>
       </div>
 
-      {/* 4. Bottom Banner: Controlled Unlock & Governance Policy */}
-      <div className="bg-[#f4f7fc] border border-blue-100 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
-        <div className="flex items-start sm:items-center gap-3 text-xs text-slate-700">
-          <ShieldAlert className="h-5 w-5 text-blue-600 shrink-0 mt-0.5 sm:mt-0" />
-          <div>
-            <h5 className="font-bold text-slate-900 text-xs">
-              Controlled Unlock & Governance Policy
-            </h5>
-            <p className="text-[11px] text-slate-600 leading-normal mt-0.5 font-medium">
-              In accordance with ATA Accreditation Bylaws (Art. 14 §2), once a dossier moves past review, any modification requires Universal Administrator clearance, two-factor token re-authentication, and a tamper-evident audit justification note.
-            </p>
-          </div>
-        </div>
-
-        <div className="shrink-0 self-start sm:self-auto">
-          <div className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200/80 font-mono text-xs font-bold text-slate-700 shadow-2xs flex items-center gap-1.5">
-            <Lock className="h-3 w-3 text-slate-400" />
-            <span>Audit Hash: #9f8c2e1b</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Bottom Sub-Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500 font-mono pt-1">
-        <span className="flex items-center gap-1.5 text-slate-600 font-medium">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Supabase Immutable Ledger Active • Node ID: node-asia-south1-saiacs-04
-        </span>
-        <span>
-          Registry Snapshot ID: reg-snap-{regNumber.slice(-5)}-ok
-        </span>
-      </div>
 
       {/* ========================================================= */}
       {/* MODALS                                                    */}

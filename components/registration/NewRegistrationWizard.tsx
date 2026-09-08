@@ -64,6 +64,8 @@ import {
   Sparkles,
   Info,
   BookmarkCheck,
+  Edit2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const COUNTRY_OPTIONS = [
@@ -262,6 +264,21 @@ function formatDobDisplay(dob?: string): string {
   }
 }
 
+function formatRegistrationTypeDisplay(type: RegistrationType): string {
+  switch (type) {
+    case 'INITIAL_REGISTRATION':
+      return 'Initial registration';
+    case 'RE_REGISTRATION':
+      return 'Re-registration';
+    case 'TRANSFER':
+      return 'Institutional transfer';
+    case 'PROGRAM_PROGRESSION':
+      return 'Program progression';
+    default:
+      return type;
+  }
+}
+
 export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
   onCancel,
   onSuccess,
@@ -281,6 +298,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
 
   const [step, setStep] = useState<1 | 2 | 3>(initialStudent ? 2 : 1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   // Step 1 State: Student
@@ -989,7 +1007,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               step === 1
                 ? 'text-slate-900 font-bold'
                 : step > 1
-                ? 'text-slate-700 font-semibold'
+                ? 'text-emerald-600 font-semibold'
                 : 'text-slate-400 font-medium'
             }`}
           >
@@ -998,7 +1016,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 step === 1
                   ? 'bg-slate-900 text-white'
                   : step > 1
-                  ? 'bg-slate-800 text-white'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}
             >
@@ -1022,7 +1040,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               step === 2
                 ? 'text-slate-900 font-bold'
                 : step > 2
-                ? 'text-slate-700 font-semibold'
+                ? 'text-emerald-600 font-semibold'
                 : 'text-slate-400 font-medium'
             }`}
           >
@@ -1031,7 +1049,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 step === 2
                   ? 'bg-slate-900 text-white'
                   : step > 2
-                  ? 'bg-slate-800 text-white'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-slate-100 text-slate-400 border border-slate-200'
               }`}
             >
@@ -1457,7 +1475,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
         <div className="space-y-6">
           {/* A. Candidate Summary Card */}
           {selectedStudent && (
-            <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-2xs">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-2xs">
               <div className="flex items-center gap-4">
                 {/* Avatar with verified check badge */}
                 <div className="relative shrink-0">
@@ -1470,16 +1488,16 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 </div>
 
                 <div>
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                     <h4 className="text-base font-black text-slate-900 tracking-tight">
                       {selectedStudent.first_name} {selectedStudent.last_name}
                     </h4>
-                    <span className="font-mono text-xs font-bold text-slate-700">
-                      UID: {selectedStudent.permanent_uid || 'STU-2026-0922'}
+                    <span className="font-mono text-xs font-semibold text-slate-500">
+                      {selectedStudent.permanent_uid || 'STU-2026-00018'}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                      Identity Verified
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                      <Check className="h-3 w-3 text-emerald-600 stroke-[3]" />
+                      Identity verified
                     </span>
                   </div>
 
@@ -1507,7 +1525,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
                 >
                   <ArrowLeftRight className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Change Student</span>
+                  <span>Change student</span>
                 </button>
 
                 <button
@@ -1561,11 +1579,11 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
             </div>
           )}
 
-          {/* B. Registration Type * */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
+          {/* B. Registration Type */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
             <div>
-              <h4 className="text-sm font-black text-slate-900 flex items-center gap-1">
-                Registration Type <span className="text-rose-500">*</span>
+              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                Registration type <span className="text-rose-500">*</span>
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Select the type of registration for this student.
@@ -1576,25 +1594,25 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               {[
                 {
                   type: 'INITIAL_REGISTRATION',
-                  title: 'Initial Registration',
+                  title: 'Initial registration',
                   desc: 'First-time registration with ATA',
                   icon: GraduationCap,
                 },
                 {
                   type: 'RE_REGISTRATION',
-                  title: 'Re-Registration',
+                  title: 'Re-registration',
                   desc: 'Returning student renewing an inactive or lapsed registration',
                   icon: RotateCcw,
                 },
                 {
                   type: 'TRANSFER',
-                  title: 'Institutional Transfer',
+                  title: 'Institutional transfer',
                   desc: 'Student transferring from another accredited affiliate',
                   icon: ArrowLeftRight,
                 },
                 {
                   type: 'PROGRAM_PROGRESSION',
-                  title: 'Program Progression',
+                  title: 'Program progression',
                   desc: 'Student progressing from one ATA program to another',
                   icon: TrendingUp,
                 },
@@ -1605,28 +1623,30 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   <div
                     key={item.type}
                     onClick={() => setRegistrationType(item.type as RegistrationType)}
-                    className={`cursor-pointer rounded-2xl p-3.5 transition-all relative flex flex-col justify-between min-h-[105px] ${
+                    className={`cursor-pointer rounded-2xl p-4 transition-all relative flex flex-col justify-between min-h-[110px] ${
                       isSelected
-                        ? 'bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20'
-                        : 'bg-white border border-slate-200/80 text-slate-900 hover:border-slate-300 hover:bg-slate-50/60'
+                        ? 'bg-slate-50 border-2 border-slate-900 text-slate-900 shadow-xs'
+                        : 'bg-white border border-slate-200/80 text-slate-900 hover:border-slate-300 hover:bg-slate-50/50'
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className={`p-1.5 rounded-xl ${isSelected ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                      <div className={`p-2 rounded-xl transition-colors ${
+                        isSelected ? 'bg-slate-200 text-slate-900' : 'bg-slate-100 text-slate-600'
+                      }`}>
                         <Icon className="h-4 w-4" />
                       </div>
-                      <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
-                        isSelected ? 'border-white' : 'border-slate-300'
+                      <div className={`h-4 w-4 rounded-full border flex items-center justify-center transition-all ${
+                        isSelected ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white'
                       }`}>
-                        {isSelected && <div className="h-2 w-2 rounded-full bg-white" />}
+                        {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
                       </div>
                     </div>
 
-                    <div className="mt-2.5">
-                      <h5 className={`text-xs font-black tracking-tight ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                    <div className="mt-3">
+                      <h5 className="text-xs font-bold text-slate-900 tracking-tight">
                         {item.title}
                       </h5>
-                      <p className={`text-[11px] font-medium leading-tight mt-0.5 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                      <p className="text-[11px] font-medium leading-tight mt-0.5 text-slate-500">
                         {item.desc}
                       </p>
                     </div>
@@ -1656,7 +1676,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                     value={previousRegistrationNumber}
                     onChange={(e) => setPreviousRegistrationNumber(e.target.value)}
                     placeholder="e.g. SAIACS/MDIV/2024/12 or previous registration ID"
-                    className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-xs text-slate-900 font-bold"
+                    className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-xs text-slate-900 font-bold focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 </div>
               </div>
@@ -1664,10 +1684,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
           </div>
 
           {/* C. Program & Academic Details */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
             <div className="border-b border-slate-200/60 pb-3">
-              <h4 className="text-sm font-black text-slate-900">
-                Program & Academic Details
+              <h4 className="text-sm font-bold text-slate-900">
+                Program and academic details
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Select the student's program and academic year.
@@ -1678,21 +1698,22 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               {/* Institution */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                    Institution <span className="text-rose-500">*</span>
+                  <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Institution</span>
+                    <span className="text-rose-500">*</span>
+                    {user?.role === 'REGISTRAR' && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200">
+                        <Lock className="h-2.5 w-2.5 text-slate-400" /> Assigned
+                      </span>
+                    )}
                   </label>
-                  {user?.role === 'REGISTRAR' && (
-                    <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-                      <Lock className="h-3 w-3 text-slate-400" /> Assigned Institution
-                    </span>
-                  )}
                 </div>
 
                 {user?.role === 'REGISTRAR' ? (
                   <div className="relative">
-                    <div className="w-full rounded-xl border border-slate-200 bg-white p-2.5 flex items-center justify-between text-xs font-bold text-slate-800">
+                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-800">
                       <div className="flex items-center gap-2 min-w-0 pr-2">
-                        <Building2 className="h-4 w-4 text-slate-500 shrink-0" />
+                        <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
                         <span className="truncate">
                           {selectedInstitution?.name || 'South Asia Institute of Advanced Christian Studies (SAIACS)'}
                         </span>
@@ -1708,7 +1729,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                     <select
                       value={selectedInstitutionId}
                       onChange={(e) => handleInstitutionChange(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-slate-900 focus:outline-hidden appearance-none cursor-pointer"
                     >
                       {institutions.map((inst) => (
                         <option key={inst.id} value={inst.id}>
@@ -1727,7 +1748,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                    Academic Year <span className="text-rose-500">*</span>
+                    Academic year <span className="text-rose-500">*</span>
                   </label>
                 </div>
 
@@ -1738,7 +1759,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   <select
                     value={academicYear}
                     onChange={(e) => setAcademicYear(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-slate-900 focus:outline-hidden appearance-none cursor-pointer"
                   >
                     <option value="2026-2027">2026–2027 (Autumn Intake - August)</option>
                     <option value="2026-2027-SPRING">2026–2027 (Spring Intake - January)</option>
@@ -1755,7 +1776,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                    Academic Department <span className="text-rose-500">*</span>
+                    Academic department <span className="text-rose-500">*</span>
                   </label>
                 </div>
 
@@ -1766,7 +1787,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   <select
                     value={selectedDepartmentId}
                     onChange={(e) => handleDepartmentChange(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-slate-900 focus:outline-hidden appearance-none cursor-pointer"
                   >
                     {departments.length > 1 && (
                       <option value="">All Departments ({departments.length})</option>
@@ -1798,7 +1819,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   <select
                     value={selectedProgramId}
                     onChange={(e) => handleProgramChange(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-black focus:outline-hidden appearance-none cursor-pointer"
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-slate-900 focus:outline-hidden appearance-none cursor-pointer"
                   >
                     {programs.length === 0 && <option value="">No programs available</option>}
                     {programs.map((prog) => (
@@ -1815,11 +1836,11 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
             </div>
           </div>
 
-          {/* D. Enrollment Modality */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+          {/* D. Enrollment Modality (Standalone Card) */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
             <div>
               <h4 className="text-xs font-bold text-slate-900">
-                Enrollment Modality
+                Enrollment modality <span className="text-rose-500">*</span>
               </h4>
               <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                 Select full-time residential or modular/distance mode.
@@ -1837,7 +1858,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 }`}
               >
                 <Building2 className="h-3.5 w-3.5" />
-                <span>Full-Time Residential</span>
+                <span>Full-time residential</span>
               </button>
 
               <button
@@ -1849,21 +1870,21 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                     : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>Modular / Distance</span>
+                <span>Modular / distance</span>
               </button>
             </div>
           </div>
 
-          {/* E. Prior Academic Qualification Details (Required by tests & DB) */}
-          <div className="p-5 rounded-2xl border border-slate-200/80 bg-slate-50/70 space-y-4 shadow-2xs">
+          {/* E. Prior Academic Background & Entrance Qualification */}
+          <div className="p-5 rounded-2xl border border-slate-200/80 bg-white space-y-4 shadow-2xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <GraduationCap className="h-4 w-4 text-slate-600" />
-                <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                  Prior Academic Background & Entrance Qualification
+                <h4 className="text-xs font-bold text-slate-900">
+                  Prior academic background and entrance qualification
                 </h4>
               </div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                 Required
               </span>
             </div>
@@ -1871,13 +1892,13 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Highest Qualification <span className="text-rose-500">*</span>
+                  Highest qualification <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
                   value={selectedHighestQual}
                   onChange={(e) => handleHighestQualSelect(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                 >
                   {HIGHEST_QUALIFICATION_OPTIONS.map((opt) => (
                     <option key={opt} value={opt}>
@@ -1892,14 +1913,14 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                     placeholder="Enter custom qualification details"
                     value={customHighestQual}
                     onChange={(e) => handleCustomHighestQualInput(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5"
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 )}
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Previous College / Institution <span className="text-rose-500">*</span>
+                  Previous college / institution <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1908,7 +1929,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   value={previousInstitution}
                   onChange={(e) => setPreviousInstitution(e.target.value)}
                   placeholder="e.g. Mizoram University"
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                 />
                 <datalist id="prev-inst-catalog">
                   {INSTITUTION_NAMES.map((n) => (
@@ -1919,13 +1940,13 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Previous Program / Degree <span className="text-rose-500">*</span>
+                  Previous program / degree <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
                   value={selectedPreviousProg}
                   onChange={(e) => handlePreviousProgSelect(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                 >
                   <option value="">Select Previous Program / Degree...</option>
                   {PROGRAM_NAMES.map((prog) => (
@@ -1942,30 +1963,30 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                     placeholder="Enter previous degree details"
                     value={customPreviousProg}
                     onChange={(e) => handleCustomPreviousProgInput(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5"
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-medium mt-1.5 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 )}
               </div>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Completion Year & Roll No <span className="text-rose-500">*</span>
+                  Completion year and roll no. <span className="text-rose-500">*</span>
                 </label>
-                <div className="flex items-center gap-1.5">
+                <div className="grid grid-cols-5 gap-2">
                   <input
                     type="text"
                     required
                     value={yearOfCompletion}
                     onChange={(e) => setYearOfCompletion(e.target.value)}
                     placeholder="Year (e.g. 2023)"
-                    className="w-20 rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800"
+                    className="col-span-2 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                   <input
                     type="text"
                     value={qualificationRegNo}
                     onChange={(e) => setQualificationRegNo(e.target.value)}
-                    placeholder="Roll / Reg No"
-                    className="flex-1 rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800"
+                    placeholder="Roll / Reg no."
+                    className="col-span-3 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-slate-900 focus:outline-hidden"
                   />
                 </div>
               </div>
@@ -1979,13 +2000,18 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-slate-600" />
-                  <h4 className="text-xs font-black text-slate-900 tracking-wider uppercase">
-                    Mandatory Dossier Checklist
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Mandatory dossier checklist
                   </h4>
                 </div>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  3 of 3 Verified
-                </span>
+                <div className="flex items-center gap-2">
+                  <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                    <div className="w-full h-full bg-emerald-500 rounded-full" />
+                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    3 of 3 verified
+                  </span>
+                </div>
               </div>
 
               {/* Dossier Item 1: Academic Transcripts */}
@@ -1996,10 +2022,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h5 className="text-xs font-black text-slate-900 truncate">
-                        Academic Transcripts (Bachelors/Prior Degree)
+                      <h5 className="text-xs font-bold text-slate-900 truncate">
+                        Academic transcripts (bachelors / prior degree)
                       </h5>
-                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         Verified
                       </span>
                     </div>
@@ -2036,10 +2062,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h5 className="text-xs font-black text-slate-900 truncate">
-                        Church Recommendation & Endorsement Letter
+                      <h5 className="text-xs font-bold text-slate-900 truncate">
+                        Church recommendation and endorsement letter
                       </h5>
-                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         Verified
                       </span>
                     </div>
@@ -2076,10 +2102,10 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h5 className="text-xs font-black text-slate-900 truncate">
-                        Government Photo Identification
+                      <h5 className="text-xs font-bold text-slate-900 truncate">
+                        Government photo identification
                       </h5>
-                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         Verified
                       </span>
                     </div>
@@ -2114,7 +2140,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-slate-900">
-                    Registrar Assessment & Remarks <span className="text-rose-500">*</span>
+                    Registrar assessment and remarks <span className="text-rose-500">*</span>
                   </label>
                   <span className="text-[11px] text-slate-400 font-mono">
                     {notes.length}/500 char
@@ -2127,17 +2153,17 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Candidate passed prerequisite assessment. All original verification records confirmed in person. Prior qualification audited and approved."
-                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 leading-relaxed focus:ring-2 focus:ring-black focus:outline-hidden resize-none shadow-2xs font-sans"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 leading-relaxed focus:ring-2 focus:ring-slate-900 focus:outline-hidden resize-none shadow-2xs font-sans"
                 />
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-2.5">
-                <ShieldCheck className="h-4 w-4 text-slate-600 shrink-0 mt-0.5" />
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-start gap-2.5">
+                <ShieldCheck className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
                 <div>
-                  <h5 className="text-xs font-bold text-slate-900">
-                    Registrar Verification
+                  <h5 className="text-xs font-semibold text-slate-900">
+                    Registrar verification
                   </h5>
-                  <p className="text-[11px] text-slate-500 leading-normal mt-0.5 font-medium">
+                  <p className="text-[11px] text-slate-500 leading-normal mt-0.5">
                     Submitting this record registers the student under ATA accredited guidelines.
                   </p>
                 </div>
@@ -2148,7 +2174,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
           {/* G. Sticky Bottom Action Footer Bar */}
           <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t border-slate-200 py-3.5 px-6 -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 rounded-b-3xl flex flex-wrap items-center justify-between gap-4 z-20 shadow-xs">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
                 <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
                 Draft saved just now
               </span>
@@ -2171,7 +2197,7 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <Save className="h-3.5 w-3.5 text-slate-500" />
-                <span>Save Draft</span>
+                <span>Save draft</span>
               </button>
 
               <button
@@ -2192,96 +2218,260 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
       {/* ========================================================================= */}
       {step === 3 && selectedStudent && (
         <div className="space-y-6">
-          <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 shadow-2xs p-6 space-y-6">
-            <div className="pb-4 border-b border-slate-200/60 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900 tracking-tight">
-                  Review Registration Details
-                </h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Review student and academic details before submitting the registration record.
-                </p>
+          {/* A. "Ready to submit" Full-Width Completion Banner */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 sm:p-5 flex items-center justify-between text-emerald-950 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="h-7 w-7 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                <Check className="h-4 w-4 stroke-[3]" />
               </div>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs">
-                Ready to Submit
-              </span>
-            </div>
-
-            {/* Registration Key Preview Card */}
-            <div className="p-4 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                  Assigned Registration ID
-                </p>
-                <h4 className="text-xl font-black font-mono tracking-tight text-white mt-0.5">
-                  {previewRegNumber || `${selectedInstitution?.code || 'SAIACS'}/${selectedProgram?.code || 'MDIV'}/${extractYear(academicYear)}/1`}
+                <h4 className="text-sm font-bold text-emerald-900">
+                  Ready to submit
                 </h4>
-                <p className="text-xs text-slate-400 font-medium mt-1">
-                  Format: [INST]/[PROG]/[YEAR]/[SEQ]
+                <p className="text-xs text-emerald-700 mt-0.5 font-medium">
+                  All required fields and documents are verified. Review below before submitting.
                 </p>
-              </div>
-
-              <div className="sm:text-right">
-                <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                  Student UID
-                </p>
-                <h5 className="text-base font-black font-mono text-white mt-0.5">
-                  {selectedStudent.permanent_uid}
-                </h5>
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 mt-1">
-                  ● State: {selectedStudent.state}
-                </span>
               </div>
             </div>
+            <Check className="h-5 w-5 text-emerald-600 shrink-0 stroke-[2.5]" />
+          </div>
 
-            {/* Placement Breakdown Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <span className="text-slate-400 font-medium block">Student Name</span>
-                <span className="font-bold text-slate-900 text-sm">
+          {/* B. Assigned Registration ID & Student UID Dark Card */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-sm">
+            <div>
+              <p className="text-xs font-semibold text-slate-400">
+                Assigned registration ID
+              </p>
+              <h4 className="text-xl sm:text-2xl font-bold font-mono tracking-tight text-white mt-1">
+                {previewRegNumber || `${selectedInstitution?.code || 'SAIACS'}/${selectedProgram?.code || 'MDIV'}/${extractYear(academicYear)}/1`}
+              </h4>
+              <p className="text-xs text-slate-400 font-medium mt-1 font-mono">
+                Format: [INST] / [PROG] / [YEAR] / [SEQ]
+              </p>
+            </div>
+
+            <div className="sm:text-right">
+              <p className="text-xs font-semibold text-slate-400">
+                Student UID
+              </p>
+              <h5 className="text-base sm:text-lg font-bold font-mono text-white mt-1">
+                {selectedStudent.permanent_uid || 'STU-2026-00019'}
+              </h5>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 mt-1.5 sm:justify-end">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span>{selectedStudent.state || 'Madhya Pradesh'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* C. Student Details Section */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
+            <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Student details
+              </h4>
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                <span>Edit</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div>
+                <span className="text-slate-500 font-medium block">Full name</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
                   {selectedStudent.first_name} {selectedStudent.last_name}
                 </span>
-                <span className="text-slate-500 block text-[11px] mt-0.5">
+              </div>
+              <div>
+                <span className="text-slate-500 font-medium block">Email</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
                   {selectedStudent.email}
                 </span>
               </div>
-
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <span className="text-slate-400 font-medium block">Degree Program</span>
-                <span className="font-bold text-slate-900 text-sm">
-                  {selectedProgram?.name || selectedProgramId}
-                </span>
-                <span className="text-slate-500 block text-[11px] mt-0.5">
-                  {selectedDepartment?.name || 'Academic Division'}
-                </span>
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <span className="text-slate-400 font-medium block">Registration Type & Intake</span>
-                <span className="font-bold text-slate-900 text-sm">
-                  {registrationType.replace(/_/g, ' ')}
-                </span>
-                <span className="text-slate-500 block text-[11px] mt-0.5">
-                  {academicYear} • {enrollmentModality === 'RESIDENTIAL' ? 'Full-Time Residential' : 'Modular / Distance'}
+              <div>
+                <span className="text-slate-500 font-medium block">UID</span>
+                <span className="font-mono font-bold text-slate-900 text-sm mt-0.5 block">
+                  {selectedStudent.permanent_uid || 'STU-2026-00019'}
                 </span>
               </div>
             </div>
+          </div>
 
-            {/* Registrar Assessment Endorsement */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-white">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Registrar Remarks
+          {/* D. Academic Details Section */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-2xs">
+            <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Academic details
+              </h4>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                <span>Edit</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-4 gap-x-6 text-xs">
+              {/* Row 1 */}
+              <div>
+                <span className="text-slate-500 font-medium block">Degree program</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {selectedProgram?.name || selectedProgramId}
+                </span>
+                <span className="text-slate-500 block text-xs mt-0.5">
+                  {selectedDepartment?.name || 'Online Education'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium block">Registration type</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {formatRegistrationTypeDisplay(registrationType)}
+                </span>
+                <span className="text-slate-500 block text-xs mt-0.5">
+                  {academicYear} · {enrollmentModality === 'RESIDENTIAL' ? 'Full-time residential' : 'Modular / distance'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium block">Institution</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {selectedInstitution?.name || 'SAIACS'}
+                </span>
+                <span className="text-slate-500 block text-xs mt-0.5">
+                  {selectedStudent.state || selectedInstitution?.code || 'Affiliated Institution'}
+                </span>
+              </div>
+
+              {/* Row 2 */}
+              <div>
+                <span className="text-slate-500 font-medium block">Highest qualification</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {selectedHighestQual === 'Other' ? customHighestQual : (selectedHighestQual || 'Bachelor of Arts')}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium block">Previous institution</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {previousInstitution || 'Mizoram University'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 font-medium block">Completion year and roll no.</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">
+                  {yearOfCompletion || '2023'} · {qualificationRegNo || 'MZ-UG-88291'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* E. Verified Documents */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-3 shadow-2xs">
+            <div className="border-b border-slate-200/60 pb-3">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Verified documents
+              </h4>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* Dossier Item 1 */}
+              <div className="p-3 rounded-xl border border-slate-200/80 bg-white flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <div className="h-5 w-5 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                    <Check className="h-3 w-3 stroke-[3]" />
+                  </div>
+                  <span className="font-bold text-slate-900 truncate">
+                    Academic transcripts (bachelors / prior degree)
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                  {selectedStudent.last_name || 'test1'}_Bachelors_Transcript.pdf
+                </span>
+              </div>
+
+              {/* Dossier Item 2 */}
+              <div className="p-3 rounded-xl border border-slate-200/80 bg-white flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <div className="h-5 w-5 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                    <Check className="h-3 w-3 stroke-[3]" />
+                  </div>
+                  <span className="font-bold text-slate-900 truncate">
+                    Church recommendation and endorsement letter
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                  Presbyterian_Synod_Endorsement.pdf
+                </span>
+              </div>
+
+              {/* Dossier Item 3 */}
+              <div className="p-3 rounded-xl border border-slate-200/80 bg-white flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <div className="h-5 w-5 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+                    <Check className="h-3 w-3 stroke-[3]" />
+                  </div>
+                  <span className="font-bold text-slate-900 truncate">
+                    Government photo identification
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                  Aadhaar_Card_Verified.png · Document locker
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* F. Registrar Remarks */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-3 shadow-2xs">
+            <div className="border-b border-slate-200/60 pb-3">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Registrar remarks
+              </h4>
+            </div>
+
+            <div className="p-4 rounded-xl border border-slate-200/80 border-l-4 border-l-blue-600 bg-slate-50/60 space-y-1">
+              <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider block">
+                Registrar's assessment
               </span>
               <p className="text-xs text-slate-800 leading-relaxed font-medium">
-                &ldquo;{notes}&rdquo;
+                {notes || 'Candidate passed prerequisite assessment. All original verification records confirmed in person. Prior qualification audited and approved.'}
               </p>
             </div>
           </div>
 
-          {/* Sticky Bottom Actions for Step 3 */}
+          {/* G. Explicit Submission Warning & Confirmation Checkbox */}
+          <div className="space-y-3">
+            <div className="p-4 rounded-2xl border border-amber-300 bg-amber-50/80 text-amber-900 text-xs flex items-start gap-3 shadow-2xs">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="leading-relaxed font-semibold">
+                Submitting this record is permanent. The student will be registered under ATA accredited guidelines. Ensure all details above are correct before proceeding.
+              </p>
+            </div>
+
+            <label className="p-4 rounded-2xl border border-blue-200 bg-blue-50/80 flex items-center gap-3 text-xs text-blue-950 font-bold cursor-pointer hover:bg-blue-100/60 transition-colors shadow-2xs">
+              <input
+                type="checkbox"
+                checked={isConfirmed}
+                onChange={(e) => setIsConfirmed(e.target.checked)}
+                className="h-4 w-4 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <span>I confirm the above details are accurate and authorise this registration submission.</span>
+            </label>
+          </div>
+
+          {/* H. Sticky Bottom Actions for Step 3 */}
           <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t border-slate-200 py-3.5 px-6 -mx-6 -mb-6 sm:-mx-8 sm:-mb-8 rounded-b-3xl flex flex-wrap items-center justify-between gap-4 z-20 shadow-xs">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
                 <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
                 Draft saved just now
               </span>
@@ -2304,17 +2494,17 @@ export const NewRegistrationWizard: React.FC<NewRegistrationWizardProps> = ({
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <Save className="h-3.5 w-3.5 text-slate-500" />
-                <span>Save Draft</span>
+                <span>Save draft</span>
               </button>
 
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !isConfirmed}
                 onClick={() => handleFinalSave('SUBMITTED')}
-                className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Send className="h-3.5 w-3.5" />
-                <span>{isSubmitting ? 'Submitting Registration...' : 'Submit Registration'}</span>
+                <span>{isSubmitting ? 'Submitting Registration...' : 'Submit registration'}</span>
               </button>
             </div>
           </div>
