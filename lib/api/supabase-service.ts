@@ -740,10 +740,14 @@ export async function fetchStudents(searchQuery?: string, actor?: ActorContext):
 }
 
 export async function fetchStudentById(studentIdOrUid: string, actor?: ActorContext): Promise<Student | null> {
+  // The id column is a UUID; comparing it against a non-UUID value (e.g. a
+  // permanent UID like "STU-2026-00022") raises a Postgres type error. So we
+  // resolve by the correct column based on whether the value looks like a UUID.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(studentIdOrUid);
   const { data, error } = await supabase
     .from('students')
     .select('*')
-    .or(`id.eq.${studentIdOrUid},permanent_uid.eq.${studentIdOrUid}`)
+    .eq(isUuid ? 'id' : 'permanent_uid', studentIdOrUid)
     .maybeSingle();
 
   if (error || !data) return null;
@@ -1089,6 +1093,10 @@ export async function fetchRegistrations(
 }
 
 export async function fetchRegistrationById(id: string, actor?: ActorContext): Promise<Registration | null> {
+  // id is a UUID column; matching it against a non-UUID registration_number
+  // (e.g. "REG-2026-000101") raises a Postgres type error, so resolve by the
+  // correct column based on whether the value looks like a UUID.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   const { data, error } = await supabase
     .from('registrations')
     .select(`
@@ -1098,7 +1106,7 @@ export async function fetchRegistrationById(id: string, actor?: ActorContext): P
       department:departments(*),
       program:programs(*)
     `)
-    .or(`id.eq.${id},registration_number.eq.${id}`)
+    .eq(isUuid ? 'id' : 'registration_number', id)
     .maybeSingle();
 
   if (error || !data) return null;
@@ -1800,6 +1808,48 @@ export async function fetchDocuments(actor?: ActorContext): Promise<any[]> {
   return data || [];
 }
 
+export interface RegistrationDocumentSummary {
+  id: string;
+  file_name: string;
+  file_size: string | null;
+  created_at: string | null;
+}
+
+/**
+ * List the real uploaded documents attached to a single registration.
+ * Authorization mirrors document preview: the registration is resolved with
+ * institution scoping, then PREVIEW_DOCUMENT permission is asserted.
+ */
+export async function fetchDocumentsForRegistration(
+  registrationId: string,
+  actor?: ActorContext
+): Promise<RegistrationDocumentSummary[]> {
+  const registration = await fetchRegistrationById(registrationId, actor);
+  if (!registration) {
+    throw new Error('404 Registration not found.');
+  }
+  assertPermission('PREVIEW_DOCUMENT', actor, registration.institution_id);
+
+  const client = supabaseAdmin ?? supabase;
+  const { data, error } = await client
+    .from('documents')
+    .select('id, file_name, file_size, created_at')
+    .eq('registration_id', registration.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Registration documents lookup failed:', error.message);
+    throw new Error('500 Unable to load documents for this registration.');
+  }
+
+  return (data || []).map((d: any) => ({
+    id: d.id,
+    file_name: d.file_name,
+    file_size: d.file_size ?? null,
+    created_at: d.created_at ?? null,
+  }));
+}
+
 export async function uploadDocumentAttachment(
   file: File,
   registrationId: string,
@@ -1819,13 +1869,27 @@ export async function uploadDocumentAttachment(
     throw new Error('400 The selected file must be between 1 byte and 50 MB.');
   }
 
+  // Resolve a canonical content type. Some browsers send an empty or non-standard
+  // MIME type (e.g. "image/tif"), so fall back to the file extension when needed.
+  const extension = (file.name.split('.').pop() || '').toLowerCase();
+  const extensionToType: Record<string, string> = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+  };
+  const normalizedType =
+    file.type === 'image/tif' ? 'image/tiff' : file.type || extensionToType[extension] || '';
+
   const allowedContentTypes = new Set([
     'application/pdf',
     'image/jpeg',
     'image/png',
     'image/tiff',
   ]);
-  if (!allowedContentTypes.has(file.type)) {
+  if (!allowedContentTypes.has(normalizedType)) {
     throw new Error('400 Unsupported file type. Upload a PDF, JPEG, PNG, or TIFF file.');
   }
 
@@ -1835,7 +1899,7 @@ export async function uploadDocumentAttachment(
     'image/png': 'png',
     'image/tiff': 'tiff',
   };
-  const filePath = `${registrationId}/${crypto.randomUUID()}.${extensionByType[file.type]}`;
+  const filePath = `${registrationId}/${crypto.randomUUID()}.${extensionByType[normalizedType]}`;
 
   const bucketResult = await ensureStorageBucket();
   if (!bucketResult.ok) {
@@ -1845,7 +1909,7 @@ export async function uploadDocumentAttachment(
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from(STORAGE_BUCKET)
-    .upload(filePath, file, { contentType: file.type, upsert: false });
+    .upload(filePath, file, { contentType: normalizedType, upsert: false });
   if (uploadError) {
     console.error('Document storage upload failed:', uploadError.message);
     throw new Error('503 Unable to store the uploaded document. Please try again.');

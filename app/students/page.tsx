@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { UserRole, Student, Registration, Institution } from '@/lib/types';
 import { useAuth } from '@/lib/context/AuthContext';
 import { fetchInstitutions } from '@/lib/api/supabase-service';
@@ -12,11 +12,15 @@ import { UniversalStudentMasterDirectoryView } from '@/components/students/Unive
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
-export default function StudentsPage() {
+function StudentsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [role, setRole] = useState<UserRole>('ADMINISTRATOR');
-  const [studentParamId, setStudentParamId] = useState<string | null>(null);
+
+  // Read the selected student directly from the URL so it updates reactively on
+  // client-side navigation (e.g. clicking a scholar in the directory).
+  const studentParamId = searchParams.get('id');
 
   const [students, setStudents] = useState<Student[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -29,17 +33,6 @@ export default function StudentsPage() {
       setRole(user.role);
     }
   }, [user]);
-
-  // Check URL params for direct student selection
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const studentId = params.get('id');
-      if (studentId) {
-        setStudentParamId(studentId);
-      }
-    }
-  }, []);
 
   const loadData = useCallback(async () => {
     if (authLoading || !user) return;
@@ -104,6 +97,7 @@ export default function StudentsPage() {
           students={students}
           registrations={registrations}
           institutions={institutions}
+          onRefresh={loadData}
         />
       ) : (
         <StudentTimelineHistoryView
@@ -112,7 +106,6 @@ export default function StudentsPage() {
           onBack={
             studentParamId
               ? () => {
-                  setStudentParamId(null);
                   router.push('/students');
                 }
               : undefined
@@ -123,5 +116,13 @@ export default function StudentsPage() {
         />
       )}
     </PortalLayout>
+  );
+}
+
+export default function StudentsPage() {
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <StudentsPageContent />
+    </Suspense>
   );
 }

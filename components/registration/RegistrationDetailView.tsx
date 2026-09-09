@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Registration, UserRole, WorkflowStatus, DocumentReference } from '@/lib/types';
 import { CorrectionModal } from './CorrectionModal';
 import { MobileWebCameraCapture } from './MobileWebCameraCapture';
@@ -103,13 +103,19 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
   const [showCertificateModal, setShowCertificateModal] = useState(false);
-  const [activeDocPreview, setActiveDocPreview] = useState<{
-    title: string;
-    filename: string;
-    size: string;
-    sha256: string;
-    verifiedBy: string;
-  } | null>(null);
+
+  // Real uploaded documents for this registration.
+  interface RegDoc { id: string; file_name: string; file_size: string | null; created_at: string | null; }
+  const [regDocuments, setRegDocuments] = useState<RegDoc[]>([]);
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  // In-app preview of a single document (private storage -> object URL).
+  const [previewDoc, setPreviewDoc] = useState<RegDoc | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewContentType, setPreviewContentType] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const isMobile = useIsMobileDevice();
   const isRegistrar = currentRole === 'REGISTRAR';
@@ -130,6 +136,76 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
   const deptName = department?.name || 'Theological & Historical Studies';
   const regNumber = registration.registration_number || 'SAIACS/BA-CML/2026/1';
   const academicCycle = registration.academic_year || '2026–2027';
+
+  // Load the real uploaded documents attached to this registration.
+  const loadRegistrationDocuments = useCallback(async () => {
+    if (!registration.id) return;
+    setDocsLoading(true);
+    setDocsError(null);
+    try {
+      const res = await fetch(
+        `/api/registrations/${encodeURIComponent(registration.id)}/documents`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to load documents.');
+      }
+      const data = await res.json();
+      setRegDocuments(data.documents || []);
+    } catch (err) {
+      setRegDocuments([]);
+      setDocsError(err instanceof Error ? err.message : 'Unable to load documents.');
+    } finally {
+      setDocsLoading(false);
+    }
+  }, [registration.id]);
+
+  useEffect(() => {
+    loadRegistrationDocuments();
+  }, [loadRegistrationDocuments]);
+
+  // Release preview object URL when the viewer changes or unmounts.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const openDocumentPreview = async (doc: RegDoc) => {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewContentType('');
+    setPreviewError(null);
+    setPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(doc.id)}/preview`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to preview this document. Please try again.');
+      }
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        throw new Error('Unable to preview this document. Please try again.');
+      }
+      setPreviewContentType(blob.type || res.headers.get('Content-Type') || '');
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : 'Unable to preview this document. Please try again.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closeDocumentPreview = () => {
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+    setPreviewContentType('');
+    setPreviewError(null);
+    setPreviewLoading(false);
+  };
 
   const handleControlledUnlock = async () => {
     if (!unlockReason.trim()) {
@@ -191,36 +267,6 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleDownloadDossierZip = () => {
-    const manifest = {
-      registration_number: regNumber,
-      candidate: {
-        name: studentName,
-        permanent_uid: studentUid,
-        email: student?.email,
-        phone: student?.phone,
-        state: student?.state,
-      },
-      academic_placement: {
-        institution: instName,
-        program: programName,
-        department: deptName,
-        academic_year: academicCycle,
-        intake_type: registration.registration_type,
-      },
-      verification_status: registration.status,
-      timestamp: new Date().toISOString(),
-      cryptographic_protocol: 'ISO/IEC 27001 • ATA-SHA256-ENCLAVE',
-    };
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `ATA_Dossier_Archive_${regNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const getStatusBadge = (status: WorkflowStatus) => {
@@ -726,202 +772,98 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
         {/* RIGHT COLUMN (5 Cols): Document Locker & Timeline        */}
         {/* ========================================================= */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Card 1: Document Locker (4) */}
+          {/* Card 1: Document Locker — real uploaded documents for this registration */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <FolderArchive className="h-4 w-4 text-slate-600" />
                 <h3 className="text-sm font-black tracking-tight text-slate-900">
-                  Document Locker (4)
+                  Document Locker ({regDocuments.length})
                 </h3>
               </div>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#e6fcf5] text-[#0d9488] border border-emerald-200">
-                All Verified
-              </span>
-            </div>
-
-            {/* List of 4 Documents */}
-            <div className="space-y-2.5">
-              {/* Doc 1: Degree Certificate */}
-              <div className="p-3 rounded-xl border border-slate-100 bg-[#f8fafc] hover:border-slate-300 transition-all flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0 pr-2">
-                  <div className="p-2 rounded-lg bg-rose-50 border border-rose-100 text-rose-600 shrink-0">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h5 className="text-xs font-bold text-slate-900 truncate">
-                      MDiv_Degree_Certificate_Official
-                    </h5>
-                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      3.2 MB • <span className="text-emerald-700 font-semibold">Verified by Registrar</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveDocPreview({
-                      title: 'MDiv Degree Certificate (Official)',
-                      filename: 'MDiv_Degree_Certificate_Official.pdf',
-                      size: '3.2 MB',
-                      sha256: '8f7a2c1b9e0d4c3f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f',
-                      verifiedBy: 'Rev. M. Thomas, SAIACS Dean of Records',
-                    })}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Preview Document"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadDossierZip}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Download Document"
-                  >
-                    <Download className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Doc 2: Church Commendation */}
-              <div className="p-3 rounded-xl border border-slate-100 bg-[#f8fafc] hover:border-slate-300 transition-all flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0 pr-2">
-                  <div className="p-2 rounded-lg bg-rose-50 border border-rose-100 text-rose-600 shrink-0">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h5 className="text-xs font-bold text-slate-900 truncate">
-                      Church_Commendation_CSI_
-                    </h5>
-                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      1.1 MB • <span className="text-emerald-700 font-semibold">Verified by Registrar</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveDocPreview({
-                      title: 'Church Commendation & Endorsement (CSI)',
-                      filename: 'Church_Commendation_CSI_Endorsement.pdf',
-                      size: '1.1 MB',
-                      sha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0',
-                      verifiedBy: 'Bengaluru Regional Secretariat Audit',
-                    })}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Preview Document"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadDossierZip}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Download Document"
-                  >
-                    <Download className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Doc 3: National ID Passport Scan */}
-              <div className="p-3 rounded-xl border border-slate-100 bg-[#f8fafc] hover:border-slate-300 transition-all flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0 pr-2">
-                  <div className="p-2 rounded-lg bg-rose-50 border border-rose-100 text-rose-600 shrink-0">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h5 className="text-xs font-bold text-slate-900 truncate">
-                      National_ID_Passport_Scan.p
-                    </h5>
-                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      890 KB • <span className="text-emerald-700 font-semibold">Verified by Registrar</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveDocPreview({
-                      title: 'National Identity / Passport Scan',
-                      filename: 'National_ID_Passport_Scan.pdf',
-                      size: '890 KB',
-                      sha256: '9f8e7d6c5b4a3210fedcba9876543210abcdef01234567890abcdef012345678',
-                      verifiedBy: 'Government Biometric Registry Match',
-                    })}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Preview Document"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadDossierZip}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Download Document"
-                  >
-                    <Download className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Doc 4: Camera Capture Live Student */}
-              <div className="p-3 rounded-xl border border-slate-100 bg-[#f8fafc] hover:border-slate-300 transition-all flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0 pr-2">
-                  <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-600 shrink-0">
-                    <Camera className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h5 className="text-xs font-bold text-slate-900 truncate">
-                      Camera_Capture_Live_Studen
-                    </h5>
-                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                      Captured 12 Aug 2026 • <span className="text-emerald-700 font-bold">Facial Match: 98.4%</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveDocPreview({
-                      title: 'Live Camera Capture & Facial Analysis',
-                      filename: 'Camera_Capture_Live_Student.png',
-                      size: '640 KB',
-                      sha256: '2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b',
-                      verifiedBy: 'AI Biometric OCR Verification Engine',
-                    })}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Preview Document"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadDossierZip}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    title="Download Document"
-                  >
-                    <Download className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Document Locker Footer */}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-              <span>Archived in Secure S3 Enclave</span>
               <button
                 type="button"
-                onClick={handleDownloadDossierZip}
-                className="font-bold text-slate-800 hover:text-black flex items-center gap-1 cursor-pointer transition-colors"
+                onClick={loadRegistrationDocuments}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Refresh documents"
+                aria-label="Refresh documents"
               >
-                <Download className="h-3 w-3" />
-                <span>Download Dossier ZIP</span>
+                <RefreshCw className={`h-3.5 w-3.5 ${docsLoading ? 'animate-spin' : ''}`} />
               </button>
+            </div>
+
+            {/* Real document list */}
+            <div className="space-y-2.5">
+              {docsLoading ? (
+                <div className="space-y-2.5" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 animate-pulse flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-slate-200" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3 w-2/3 rounded bg-slate-200" />
+                        <div className="h-2.5 w-1/3 rounded bg-slate-100" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : docsError ? (
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/60 text-center">
+                  <p className="text-xs font-semibold text-rose-700">Unable to load documents.</p>
+                  <button
+                    type="button"
+                    onClick={loadRegistrationDocuments}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Try again
+                  </button>
+                </div>
+              ) : regDocuments.length === 0 ? (
+                <div className="p-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
+                  <FileText className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
+                  <p className="text-xs font-semibold text-slate-700">No documents uploaded yet</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Documents uploaded from the Document Locker will appear here.
+                  </p>
+                </div>
+              ) : (
+                regDocuments.map((doc) => {
+                  const isImage = /\.(png|jpe?g|tiff?)$/i.test(doc.file_name);
+                  return (
+                    <div
+                      key={doc.id}
+                      className="p-3 rounded-xl border border-slate-100 bg-[#f8fafc] hover:border-slate-300 transition-all flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        <div className={`p-2 rounded-lg shrink-0 border ${isImage ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-rose-50 border-rose-100 text-rose-600'}`}>
+                          {isImage ? <Camera className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0">
+                          <h5 className="text-xs font-bold text-slate-900 truncate" title={doc.file_name}>
+                            {doc.file_name}
+                          </h5>
+                          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                            {doc.file_size || '—'}
+                            {doc.created_at ? ` • ${new Date(doc.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openDocumentPreview(doc)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]"
+                          title={`Preview ${doc.file_name}`}
+                          aria-label={`Preview ${doc.file_name}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -1069,62 +1011,79 @@ export const RegistrationDetailView: React.FC<RegistrationDetailViewProps> = ({
       )}
 
       {/* Document Inspection Modal */}
-      {activeDocPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <span className="text-[10px] font-bold text-[#0d9488] uppercase tracking-wider bg-[#e6fcf5] px-2 py-0.5 rounded-full border border-emerald-200">
-                  Cryptographically Verified Dossier
-                </span>
-                <h4 className="text-base font-black text-slate-900 mt-1">
-                  {activeDocPreview.title}
+      {previewDoc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={closeDocumentPreview}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Preview: ${previewDoc.file_name}`}
+            className="w-full max-w-4xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-100 shrink-0">
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Document preview</span>
+                <h4 className="text-sm font-bold text-slate-900 truncate" title={previewDoc.file_name}>
+                  {previewDoc.file_name}
                 </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveDocPreview(null)}
-                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 font-medium text-[11px]">Filename & Size</span>
-                <p className="font-bold text-slate-800">{activeDocPreview.filename} ({activeDocPreview.size})</p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 font-medium text-[11px]">SHA-256 Checksum</span>
-                <p className="font-mono text-[11px] text-slate-700 break-all font-semibold">
-                  {activeDocPreview.sha256}
+                <p className="text-[11px] text-slate-500">
+                  {previewDoc.file_size || '—'}
+                  {previewDoc.created_at ? ` • Uploaded ${new Date(previewDoc.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
                 </p>
               </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-slate-400 font-medium text-[11px]">Verification Authority</span>
-                <p className="font-bold text-slate-800">{activeDocPreview.verifiedBy}</p>
-              </div>
+              <button
+                type="button"
+                onClick={closeDocumentPreview}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488] shrink-0"
+                aria-label="Close preview"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={handleDownloadDossierZip}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Download Asset</span>
-              </button>
+            {/* Viewer */}
+            <div className="flex-1 bg-slate-100 min-h-[300px] flex items-center justify-center overflow-auto p-4">
+              {previewLoading ? (
+                <div className="flex flex-col items-center gap-2 text-slate-500">
+                  <RefreshCw className="h-6 w-6 animate-spin" aria-hidden="true" />
+                  <span className="text-xs font-medium">Loading document…</span>
+                </div>
+              ) : previewError ? (
+                <div className="text-center max-w-sm">
+                  <div className="mx-auto mb-2 h-10 w-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center">
+                    <AlertCircle className="h-5 w-5 text-rose-600" />
+                  </div>
+                  <p className="text-sm font-semibold text-rose-700">{previewError}</p>
+                  <button
+                    type="button"
+                    onClick={() => openDocumentPreview(previewDoc)}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold transition-colors"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Try again
+                  </button>
+                </div>
+              ) : previewUrl ? (
+                previewContentType.startsWith('image/') ? (
+                  <img src={previewUrl} alt={previewDoc.file_name} className="max-h-full max-w-full object-contain rounded-lg shadow-sm" />
+                ) : (
+                  <iframe src={previewUrl} title={previewDoc.file_name} className="w-full h-[70vh] rounded-lg bg-white border border-slate-200" />
+                )
+              ) : null}
+            </div>
 
+            {/* Footer */}
+            <div className="flex items-center justify-end p-4 border-t border-slate-100 bg-slate-50/60 shrink-0">
               <button
                 type="button"
-                onClick={() => setActiveDocPreview(null)}
-                className="px-4 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 cursor-pointer"
+                onClick={closeDocumentPreview}
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0d9488]"
               >
-                Close Preview
+                Close
               </button>
             </div>
           </div>
