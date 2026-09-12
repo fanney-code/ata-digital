@@ -332,7 +332,7 @@ export const RegistrarDashboard: React.FC<RegistrarDashboardProps> = ({
       {/* 1. Top Welcome Banner & Session Control */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight whitespace-nowrap">
             Welcome back, {registrarName}
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">

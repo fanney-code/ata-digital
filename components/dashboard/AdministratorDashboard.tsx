@@ -33,6 +33,7 @@ import {
   Users,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   Send,
   MessageSquare,
   Sparkles,
@@ -73,8 +74,6 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
 }) => {
   const router = useRouter();
 
-  // Active Tab for High-Priority Review Queue
-  const [activeTab, setActiveTab] = useState<'ALL' | 'RESUBMISSIONS' | 'DOCTORAL'>('ALL');
 
   // Modals & Action States
   const [isRegistrarModalOpen, setIsRegistrarModalOpen] = useState(false);
@@ -113,6 +112,16 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
     }, 4000);
   };
 
+  // Active Filter Tab & Queue Pagination State
+  const [activeTab, setActiveTab] = useState<'ALL' | 'RESUBMISSIONS' | 'DOCTORAL'>('ALL');
+  const [queuePage, setQueuePage] = useState(1);
+  const ITEMS_PER_PAGE = 2;
+
+  const handleTabChange = (tab: 'ALL' | 'RESUBMISSIONS' | 'DOCTORAL') => {
+    setActiveTab(tab);
+    setQueuePage(1);
+  };
+
   // Dynamic filter queues from registrations prop
   const pendingDossiers = useMemo(() => {
     return registrations.filter(
@@ -147,11 +156,20 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
     return registrations.filter((r) => r.status === 'CORRECTION_REQUIRED');
   }, [registrations]);
 
-  const displayedPendingDossiers = useMemo(() => {
+  const filteredPendingDossiers = useMemo(() => {
     if (activeTab === 'RESUBMISSIONS') return resubmissionDossiers;
     if (activeTab === 'DOCTORAL') return doctoralDossiers;
     return pendingDossiers;
   }, [activeTab, resubmissionDossiers, doctoralDossiers, pendingDossiers]);
+
+  const totalQueuePages = useMemo(() => {
+    return Math.ceil(filteredPendingDossiers.length / ITEMS_PER_PAGE) || 1;
+  }, [filteredPendingDossiers.length]);
+
+  const displayedPendingDossiers = useMemo(() => {
+    const startIndex = (queuePage - 1) * ITEMS_PER_PAGE;
+    return filteredPendingDossiers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredPendingDossiers, queuePage]);
 
   // Direct Approve Handler
   const handleDirectApprove = async (reg: Registration) => {
@@ -346,193 +364,136 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
         </div>
       )}
 
-      {/* Top Sub-Bar: Breadcrumbs & Live Quorum Badges */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 border-b border-slate-100 pb-3">
-        {/* Breadcrumbs */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-semibold text-slate-700">ATA Secretariat HQ</span>
-          <span>›</span>
-          <span className="font-medium text-slate-600">Academic Governance & Accreditation Board</span>
-          <span>›</span>
-          <span className="font-bold text-slate-900">Executive Overview</span>
-        </div>
 
-        {/* Live Session Pills */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50/90 text-[#006f67] border border-teal-200/60 text-[11px] font-bold shadow-2xs">
-            <span className="h-2 w-2 rounded-full bg-[#006f67] animate-pulse" />
-            <span>AY 2026–2027 ACTIVE CYCLE</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50/90 text-[#006f67] border border-teal-200/60 text-[11px] font-bold shadow-2xs">
-            <Landmark className="h-3.5 w-3.5 text-[#006f67]" />
-            <span>Accreditation Commission Live Quorum</span>
-          </div>
-        </div>
-      </div>
 
       {/* Title & Action Buttons Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 min-w-0">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Executive Governance Dashboard
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl font-medium">
-            Regional quality assurance, candidate dossier verification queue, institutional enrollment analytics, and registrar credential oversight.
-          </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
           {/* Download Regional Audit (.xlsx) */}
           <button
             type="button"
             onClick={handleDownloadAuditXlsx}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200/90 text-slate-800 hover:bg-slate-50 hover:text-slate-900 text-xs font-bold shadow-2xs transition-all active:scale-98"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold shadow-2xs transition-colors"
           >
-            <FileSpreadsheet className="h-4 w-4 text-[#006f67]" />
-            <span>Download Regional Audit (.xlsx)</span>
+            <FileSpreadsheet className="h-3.5 w-3.5 text-[#006f67]" />
+            <span>Regional Audit (.xlsx)</span>
           </button>
 
           {/* Assign / Manage Dashboard Notice */}
           <button
             type="button"
             onClick={() => setIsNoticeModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-teal-50 border border-teal-200/90 text-[#006f67] hover:bg-teal-100/70 text-xs font-bold shadow-2xs transition-all active:scale-98 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-[#006f67] hover:bg-teal-100/70 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
           >
-            <ShieldCheck className="h-4 w-4 text-[#006f67]" />
-            <span>Dashboard Notice & Checklist</span>
+            <FileCheck className="h-3.5 w-3.5 text-[#006f67]" />
+            <span>Notice &amp; Checklist</span>
           </button>
 
           {/* Batch Approve Verified Queue */}
           <button
             type="button"
             onClick={() => setBatchModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black hover:bg-neutral-800 text-white text-xs font-bold shadow-xs transition-all active:scale-98"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-2xs transition-colors"
           >
-            <Check className="h-4 w-4 stroke-[3]" />
-            <span>Batch Approve Verified Queue</span>
+            <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+            <span>Batch Approve Queue</span>
           </button>
         </div>
       </div>
 
-      {/* Top 4 Metric Cards */}
+      {/* Top 4 Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Review Queue Pending */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-              Review Queue Pending
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-[#99efe5]/70 text-[#006f67] text-[11px] font-bold tracking-tight">
-              ~+14 this week
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              REVIEW QUEUE PENDING
             </span>
           </div>
-          <div className="my-3">
-            <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+          <div className="mt-2">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
               42
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500 pt-2 border-t border-slate-100">
-            <span>28 Initial Dossiers</span>
-            <span className="text-slate-300">•</span>
-            <span className="font-bold text-[#006f67]">14 Resubmissions</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 font-normal">
+              Initial &amp; resubmitted dossiers
+            </div>
           </div>
         </div>
 
-        {/* Card 2: Correction Required / Flagged */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-              Correction Required / Flagged
+        {/* Card 2: Flagged For Review */}
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              FLAGGED FOR REVIEW
             </span>
-            <div className="h-7 w-7 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
-              <Bell className="h-3.5 w-3.5" />
-            </div>
           </div>
-          <div className="my-3">
-            <span className="text-3xl sm:text-4xl font-black text-rose-600 tracking-tight">
+          <div className="mt-2">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
               19
-            </span>
-          </div>
-          <div className="text-xs text-slate-500 pt-2 border-t border-slate-100 truncate">
-            <strong className="text-rose-600 font-bold">6 dossiers</strong> &gt; 7 days awaiting registrar reply
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 font-normal">
+              Requires attention
+            </div>
           </div>
         </div>
 
         {/* Card 3: Accreditation Pass Rate */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-              Accreditation Pass Rate
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              ACCREDITATION PASS RATE
             </span>
-            <div className="h-7 w-7 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100">
-              <Scale className="h-3.5 w-3.5" />
-            </div>
           </div>
-          <div className="my-3 flex items-baseline gap-2">
-            <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+          <div className="mt-2">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
               94.2%
-            </span>
-            <span className="text-xs font-extrabold text-[#006f67]">
-              +2.1% YoY
-            </span>
-          </div>
-          <div className="text-xs text-slate-500 pt-2 border-t border-slate-100 truncate">
-            1,248 student dossiers cleared across 142 seminaries
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 font-normal">
+              Cleared candidates
+            </div>
           </div>
         </div>
 
-        {/* Card 4: Active Registered Seminaries (Dark Card) */}
-        <div className="p-5 rounded-2xl bg-[#0f172a] text-white shadow-xs flex flex-col justify-between relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-              Active Registered Seminaries
+        {/* Card 4: Active Seminaries */}
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              ACTIVE SEMINARIES
             </span>
-            <div className="h-7 w-7 rounded-xl bg-slate-800 text-teal-400 flex items-center justify-center border border-slate-700">
-              <Landmark className="h-3.5 w-3.5" />
-            </div>
           </div>
-
-          <div className="my-2.5">
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-                142
-              </span>
-              <span className="text-slate-400 font-medium text-lg">/ 150</span>
+          <div className="mt-2">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
+              142
             </div>
-
-            {/* Progress bar */}
-            <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2.5 overflow-hidden">
-              <div className="bg-[#2dd4bf] h-full rounded-full w-[94.6%]" />
+            <div className="text-[11px] text-slate-400 mt-0.5 font-normal">
+              Across all institutions
             </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800 text-slate-400">
-            <span>94.6% Affiliate Quota</span>
-            <span className="text-teal-300 font-semibold">8 Reviews Due Q3</span>
           </div>
         </div>
       </div>
 
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column (8 cols): High-Priority Review Queue + Regional Enrollment Analytics */}
+      {/* Main Two-Column Dashboard Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Main Column (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
           {/* Section 1: High-Priority Review Queue */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
             {/* Header with Filter Pills */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100 shrink-0">
-                  <FileCheck className="h-5 w-5" />
+                <div className="h-9 w-9 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100 shrink-0">
+                  <FileCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900 leading-tight">
+                  <h2 className="text-base font-bold text-slate-900 tracking-tight">
                     High-Priority Review Queue
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Dossiers awaiting ATA Administrative Secretariat verification
-                  </p>
                 </div>
               </div>
 
@@ -540,34 +501,31 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
               <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl shrink-0 overflow-x-auto">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('ALL')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === 'ALL'
-                      ? 'bg-black text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={() => handleTabChange('ALL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ALL'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   All Pending ({pendingDossiers.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('RESUBMISSIONS')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === 'RESUBMISSIONS'
-                      ? 'bg-black text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={() => handleTabChange('RESUBMISSIONS')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'RESUBMISSIONS'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   Resubmissions ({resubmissionDossiers.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('DOCTORAL')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === 'DOCTORAL'
-                      ? 'bg-black text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={() => handleTabChange('DOCTORAL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'DOCTORAL'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   Doctoral/M.Th ({doctoralDossiers.length})
                 </button>
@@ -595,7 +553,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
                   return (
                     <div
                       key={reg.id}
-                      className="p-4 sm:p-5 rounded-2xl border border-slate-200/80 bg-slate-50/40 hover:bg-white hover:border-teal-200/80 hover:shadow-md transition-all duration-200 space-y-3.5"
+                      className="group relative p-4 sm:p-5 rounded-2xl border border-slate-200/80 bg-slate-50/40 hover:bg-white hover:border-teal-200/80 hover:shadow-md transition-all duration-200 space-y-3.5"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3 min-w-0">
@@ -610,13 +568,12 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
                                 {candidateName}
                               </h3>
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10.5px] font-extrabold tracking-tight ${
-                                  isResubmitted
-                                    ? 'bg-[#99efe5] text-[#006f67]'
-                                    : isUnderReview
+                                className={`px-2 py-0.5 rounded-full text-[10.5px] font-extrabold tracking-tight ${isResubmitted
+                                  ? 'bg-[#99efe5] text-[#006f67]'
+                                  : isUnderReview
                                     ? 'bg-amber-100 text-amber-800'
                                     : 'bg-blue-100 text-blue-700'
-                                }`}
+                                  }`}
                               >
                                 ● {status}
                               </span>
@@ -633,20 +590,33 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
                           </div>
                         </div>
 
-                        <span className="text-xs font-semibold text-slate-400 shrink-0 whitespace-nowrap">
-                          {reg.academic_year || 'AY 2026–2027'}
-                        </span>
-                      </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
+                            {reg.academic_year || 'AY 2026–2027'}
+                          </span>
 
-                      {/* Dossier Notes Callout Box */}
-                      {reg.notes && (
-                        <div className="p-3 rounded-xl bg-[#eff4ff] border border-blue-100/70 flex items-start gap-2.5 text-xs text-slate-700">
-                          <QrCode className="h-4 w-4 text-[#006f67] shrink-0 mt-0.5" />
-                          <p className="leading-relaxed">
-                            <strong>Dossier notes:</strong> {reg.notes}
-                          </p>
+                          {/* Neat Notes Badge & Popover */}
+                          {reg.notes && (
+                            <div className="relative group/note">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 text-[#006f67] border border-teal-100 text-[10.5px] font-bold cursor-help transition-colors hover:bg-teal-100">
+                                <FileText className="h-3 w-3" />
+                                <span>Notes</span>
+                              </span>
+
+                              {/* Hover Tooltip Popover */}
+                              <div className="opacity-0 group-hover/note:opacity-100 pointer-events-none group-hover/note:pointer-events-auto transition-all duration-150 transform -translate-y-1 group-hover/note:translate-y-0 absolute right-0 top-full mt-1.5 z-30 w-72 p-3 rounded-xl bg-white border border-slate-200 shadow-xl space-y-1 text-xs">
+                                <div className="flex items-center gap-1.5 font-bold text-slate-900 border-b border-slate-100 pb-1.5">
+                                  <FileText className="h-3.5 w-3.5 text-[#006f67]" />
+                                  <span>Dossier Verification Notes</span>
+                                </div>
+                                <p className="text-slate-600 leading-relaxed pt-1 text-[11.5px]">
+                                  {reg.notes}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
 
                       {/* Footer Row */}
                       <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
@@ -679,18 +649,50 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
                 })
               )}
             </div>
+
+            {/* Pagination Controls Footer */}
+            {filteredPendingDossiers.length > 0 && (
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+                <span>
+                  Showing <strong className="text-slate-800 font-semibold">{Math.min((queuePage - 1) * ITEMS_PER_PAGE + 1, filteredPendingDossiers.length)}–{Math.min(queuePage * ITEMS_PER_PAGE, filteredPendingDossiers.length)}</strong> of <strong className="text-slate-800 font-semibold">{filteredPendingDossiers.length}</strong> dossiers
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={queuePage === 1}
+                    onClick={() => setQueuePage((prev) => Math.max(prev - 1, 1))}
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+
+                  <span className="font-semibold text-slate-700">
+                    {queuePage} / {totalQueuePages}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={queuePage >= totalQueuePages}
+                    onClick={() => setQueuePage((prev) => Math.min(prev + 1, totalQueuePages))}
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    title="Next Page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 2: Regional Enrollment & Institutional Quotas */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-6">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                <h2 className="text-base font-bold text-slate-900 tracking-tight">
                   Regional Enrollment &amp; Institutional Quotas
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Aggregated cross-hub matriculation analytics for AY 2026–2027
-                </p>
               </div>
 
               <span className="px-3 py-1 rounded-full bg-[#99efe5] text-[#006f67] text-xs font-extrabold tracking-tight self-start sm:self-auto">
@@ -698,164 +700,77 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
               </span>
             </div>
 
-            {/* Hub 1: South Asia Hub */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="font-bold text-slate-900">
-                  South Asia Hub <span className="font-normal text-slate-500">(India, Sri Lanka, Nepal)</span>
+            {/* Regional Hubs Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              {[
+                { id: 'south-asia', name: 'South Asia Hub', candidates: 840, quotaPct: 67, seminaries: 92, color: '#006f67' },
+                { id: 'se-asia', name: 'SE Asia Hub', candidates: 310, quotaPct: 78, seminaries: 34, color: '#0d9488' },
+                { id: 'east-asia', name: 'East Asia Hub', candidates: 180, quotaPct: 82, seminaries: 16, color: '#2563eb' },
+              ].map((hub) => (
+                <div key={hub.id} className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2 hover:border-slate-300 transition-colors">
+                  <div className="flex items-center justify-between text-xs gap-1">
+                    <span className="font-bold text-slate-900 truncate">{hub.name}</span>
+                    <span className="font-extrabold text-xs shrink-0" style={{ color: hub.color }}>{hub.quotaPct}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${hub.quotaPct}%`, backgroundColor: hub.color }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium gap-1">
+                    <span className="whitespace-nowrap">{hub.candidates} candidates</span>
+                    <span className="whitespace-nowrap">{hub.seminaries} Seminaries</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900">840 candidates</span>
-                  <span className="font-extrabold text-[#006f67]">67% Quota</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-[#006f67] h-full rounded-full w-[67%]" />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>92 Approved Seminaries</span>
-                <span>Max Ceiling: 1,250</span>
-              </div>
-            </div>
-
-            {/* Hub 2: Southeast Asia Hub */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="font-bold text-slate-900">
-                  Southeast Asia Hub <span className="font-normal text-slate-500">(Philippines, Indonesia, Singapore, Thailand)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900">310 candidates</span>
-                  <span className="font-extrabold text-[#0d9488]">78% Quota</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-[#0d9488] h-full rounded-full w-[78%]" />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>34 Approved Seminaries</span>
-                <span>Max Ceiling: 400</span>
-              </div>
-            </div>
-
-            {/* Hub 3: East Asia Hub */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="font-bold text-slate-900">
-                  East Asia Hub <span className="font-normal text-slate-500">(Korea, Japan, Taiwan, Hong Kong)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900">180 candidates</span>
-                  <span className="font-extrabold text-blue-600">82% Quota</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-blue-600 h-full rounded-full w-[82%]" />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>16 Approved Seminaries</span>
-                <span>Max Ceiling: 220</span>
-              </div>
-            </div>
-
-            {/* ACCREDITATION LEVEL DISTRIBUTION */}
-            <div className="pt-4 border-t border-slate-100 space-y-3">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Accreditation Level Distribution
-              </span>
-
-              {/* Stacked segmented bar */}
-              <div className="w-full h-3 rounded-full flex overflow-hidden">
-                <div className="bg-slate-900 h-full w-[54%]" title="M.Div (54%)" />
-                <div className="bg-[#006f67] h-full w-[24%]" title="M.Th (24%)" />
-                <div className="bg-[#38bdf8] h-full w-[14%]" title="B.Th (14%)" />
-                <div className="bg-slate-700 h-full w-[8%]" title="Ph.D (8%)" />
-              </div>
-
-              {/* Legend row */}
-              <div className="flex items-center gap-4 text-xs font-semibold text-slate-700 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />
-                  <span>M.Div (54%)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#006f67]" />
-                  <span>M.Th (24%)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#38bdf8]" />
-                  <span>B.Th (14%)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-slate-700" />
-                  <span>Ph.D (8%)</span>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Right Column (4 cols): Attention Required + Controlled Unlock + Registrar Pulse */}
+        {/* Right Sidebar Column (4 cols): Attention Required + Controlled Unlock + Registrar Pulse */}
         <div className="lg:col-span-4 space-y-6">
           {/* Card 1: Attention Required */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="h-8 w-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight truncate">
                   Attention Required
                 </h3>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-bold">
+              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-100 text-[10.5px] font-semibold shrink-0 whitespace-nowrap">
                 &gt; 7 Days Idle
               </span>
             </div>
 
-            <p className="text-xs text-slate-500 leading-relaxed font-medium">
-              Dossiers flagged for institutional correction awaiting registrar resolution before session cutoff.
-            </p>
-
             {/* Attention Required Items */}
             {attentionRequiredDossiers.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-2">
-                No dossiers currently flagged for institutional correction.
+              <p className="text-xs text-slate-400 italic py-1 font-medium">
+                No dossiers currently flagged for attention.
               </p>
             ) : (
               attentionRequiredDossiers.map((reg) => {
                 const stu = reg.student;
                 const candidateName = stu ? `${stu.first_name} ${stu.last_name}` : 'Student Candidate';
                 const instName = reg.institution?.name || 'Accredited Seminary';
-                const deficiency = reg.notes || 'Institutional correction requested before council signoff.';
+                const deficiency = reg.notes || 'Institutional correction requested.';
 
                 return (
-                  <div key={reg.id} className="pt-2 border-t border-slate-100 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">{candidateName}</h4>
-                        <p className="text-[11px] text-slate-500 font-medium font-mono">
-                          <span className="text-[#006f67] font-bold">{reg.registration_number}</span> • {instName}
-                        </p>
-                      </div>
-                      <span className="text-xs font-bold text-rose-600 shrink-0">
-                        Correction Req.
+                  <div key={reg.id} className="pt-2.5 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-slate-900 truncate">{candidateName}</h4>
+                      <span className="font-mono text-[11px] font-bold text-[#006f67] shrink-0">
+                        {reg.registration_number}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-100 text-xs text-rose-700 font-medium leading-relaxed">
-                      <strong>Deficiency:</strong> {deficiency}
-                    </div>
+                    <p className="text-xs text-slate-600 leading-snug line-clamp-2 bg-rose-50/50 p-2 rounded-lg border border-rose-100/60">
+                      <span className="font-bold text-rose-700">Deficiency:</span> {deficiency}
+                    </p>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        UID: <strong className="font-mono text-slate-700">{stu?.permanent_uid || 'N/A'}</strong>
+                    <div className="flex items-center justify-between pt-0.5 gap-2">
+                      <span className="text-[11px] text-slate-400 font-medium truncate min-w-0" title={instName}>
+                        {instName}
                       </span>
                       <button
                         type="button"
@@ -869,7 +784,7 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
                             recipient: 'Registrar Office',
                           })
                         }
-                        className="px-2.5 py-1 rounded-lg border border-teal-200 text-[#006f67] hover:bg-teal-50 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg border border-teal-200/80 bg-teal-50/60 hover:bg-teal-100/70 text-[#006f67] text-[11.5px] font-semibold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
                       >
                         <MessageSquare className="h-3 w-3" />
                         <span>Ping Registrar</span>
@@ -882,92 +797,75 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
           </div>
 
           {/* Card 2: Controlled Unlock Protocol */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+            <div className="flex items-center gap-2 min-w-0">
               <div className="h-8 w-8 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100 shrink-0">
                 <Lock className="h-4 w-4" />
               </div>
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight truncate">
                 Controlled Unlock Protocol
               </h3>
             </div>
 
-            {/* Policy Info Notice */}
-            <div className="p-3 rounded-xl bg-[#eff4ff] border border-blue-100/70 flex items-start gap-2.5 text-xs text-slate-700">
-              <ShieldAlert className="h-4 w-4 text-[#006f67] shrink-0 mt-0.5" />
-              <p className="leading-relaxed">
-                Under <strong>ATA Accreditation Bylaws Art 14 §2</strong>, modifying approved dossiers requires recorded executive justification and cryptographic hash stamping.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 block">
-                Recent Executive Override
-              </span>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">Controlled Unlock Protocol Active</span>
-                  <span className="text-slate-500 font-medium">Feb 28, 2026</span>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  <strong>Authorizer:</strong> Dr. Grace Chen (Council Director)
-                </p>
-                <p className="text-[11px] text-slate-600">
-                  <strong>Reason:</strong> M.Th thesis title typographical correction{' '}
-                  <span className="font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
-                    (Hash: #9f0c2e1b)
-                  </span>
-                </p>
+            <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900 text-xs">Executive Override</span>
+                <span className="text-slate-400 text-[10.5px] font-medium">Feb 28</span>
               </div>
+              <p className="text-[11.5px] text-slate-600 truncate">
+                <span className="font-semibold text-slate-700">Authorizer:</span> Dr. Grace Chen
+              </p>
+              <p className="text-[11.5px] text-slate-600 truncate">
+                <span className="font-semibold text-slate-700">Reason:</span> Title correction
+              </p>
             </div>
 
             <button
               type="button"
               onClick={() => router.push('/audit-logs')}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-xs font-bold transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <FileCheck className="h-4 w-4 text-[#006f67]" />
-              <span>Inspect Controlled Unlock Log</span>
+              <FileCheck className="h-3.5 w-3.5 text-[#006f67]" />
+              <span>Inspect Unlock Log</span>
             </button>
           </div>
 
           {/* Card 3: Registrar Operations Pulse */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="h-8 w-8 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100 shrink-0">
                   <Users className="h-4 w-4" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight truncate">
                   Registrar Operations Pulse
                 </h3>
               </div>
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                  Active Registrars
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Registrars
                 </span>
-                <span className="text-2xl font-black text-slate-900 block my-1">
+                <span className="text-xl font-black text-slate-900 tracking-tight block my-0.5">
                   184
                 </span>
-                <span className="text-[11px] text-slate-500 font-medium">
-                  Across 142 institutes
+                <span className="text-[10.5px] text-slate-500 font-medium truncate block">
+                  142 institutes
                 </span>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                  Key Verifications
+              <div className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Verifications
                 </span>
-                <span className="text-2xl font-black text-[#006f67] block my-1">
+                <span className="text-xl font-black text-[#006f67] tracking-tight block my-0.5">
                   3 New
                 </span>
-                <span className="text-[11px] text-slate-500 font-medium">
-                  Pending signature proof
+                <span className="text-[10.5px] text-slate-500 font-medium truncate block">
+                  Pending proof
                 </span>
               </div>
             </div>
@@ -975,11 +873,11 @@ export const AdministratorDashboard: React.FC<AdministratorDashboardProps> = ({
             <button
               type="button"
               onClick={() => setIsRegistrarModalOpen(true)}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-xs font-bold transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 px-3 rounded-xl bg-[#006f67] hover:bg-[#005852] text-white text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Users className="h-4 w-4 text-[#006f67]" />
-              <span>Manage &amp; Provision Registrars</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              <Users className="h-3.5 w-3.5 text-white" />
+              <span>Manage Registrars</span>
+              <ArrowRight className="h-3 w-3" />
             </button>
           </div>
         </div>

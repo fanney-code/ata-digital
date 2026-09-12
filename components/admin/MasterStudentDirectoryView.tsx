@@ -617,13 +617,15 @@ const ACCENTS: Record<string, string> = {
 const MetricCard: React.FC<{ icon: React.ReactNode; accent: string; label: string; value: number; context: string }> = ({
   icon, accent, label, value, context,
 }) => (
-  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+  <div className="bg-white rounded-2xl p-4.5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
     <div className="flex items-center justify-between">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
-      <span className={`h-7 w-7 rounded-lg flex items-center justify-center ${ACCENTS[accent]}`}>{icon}</span>
+      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+      <span className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${ACCENTS[accent]}`}>{icon}</span>
     </div>
-    <div className="mt-2 text-2xl font-bold text-slate-900">{value.toLocaleString()}</div>
-    <div className="text-[11px] text-slate-400 mt-0.5">{context}</div>
+    <div className="mt-2">
+      <h3 className="text-3xl font-extrabold text-[#0f172a] tracking-tight">{value.toLocaleString()}</h3>
+      <p className="text-xs text-[#94a3b8] mt-1 font-medium">{context}</p>
+    </div>
   </div>
 );
 

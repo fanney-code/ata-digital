@@ -17,6 +17,8 @@ import {
   LogOut,
   Building2,
   X,
+  ShieldAlert,
+  Globe,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -196,6 +198,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ? adminNavItems
       : registrarNavItems;
 
+  const handlePrimaryAction = () => {
+    if (onNewRegistration) {
+      onNewRegistration();
+    } else if (onManageRegistrars && currentRole !== 'REGISTRAR') {
+      onManageRegistrars();
+    } else {
+      router.push('/registrations/new');
+    }
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  // Role Context Config for bottom card
+  const roleContextConfig = {
+    UNIVERSAL: {
+      icon: Globe,
+      label: 'Consensus Node',
+      title: 'Global Council Node: SG-ASIA-01',
+    },
+    ADMINISTRATOR: {
+      icon: ShieldAlert,
+      label: 'Administrative Scope',
+      title: 'ATA Central Council Secretariat — Asia Regional HQ',
+    },
+    REGISTRAR: {
+      icon: Building2,
+      label: 'Assigned Institution',
+      title: 'South Asia Institute of Advanced Christian Studies',
+    },
+  }[currentRole];
+
+  const ContextIcon = roleContextConfig.icon;
+
   return (
     <>
       <aside
@@ -203,80 +237,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Top Group: Banner / Action Button + Nav List */}
+        {/* Top Group: Primary Action Button + Nav List */}
         <div className="flex flex-col min-h-0 flex-1 p-4 overflow-y-auto">
-          {currentRole === 'UNIVERSAL' ? (
-            /* Universal Super-Admin Sub-banner & Action Button */
-            <div className="space-y-3 mb-4">
-              <div className="p-3 rounded-2xl bg-[#eff4ff]/80 border border-blue-100/70 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">ROOT CONSENSUS OK</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded bg-slate-900 text-white text-[10px] font-mono font-bold">LVL-0</span>
-                </div>
-                <p className="text-xs font-black text-slate-900 mt-1">UNIVERSAL SUPER-ADMIN</p>
-                <p className="text-[10px] text-slate-500 font-mono">Ed25519 Verified • Merkle Master</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (onNewRegistration) {
-                    onNewRegistration();
-                  } else {
-                    router.push('/registrations/new');
-                  }
-                  if (onCloseMobile) onCloseMobile();
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white text-xs font-bold shadow-xs transition-colors shrink-0"
-              >
-                <Plus className="h-4 w-4" />
-                <span>+ New Registration</span>
-              </button>
-            </div>
-          ) : currentRole === 'ADMINISTRATOR' ? (
-            /* Executive Queue Sub-banner */
-            <div className="p-3 rounded-2xl bg-[#eff4ff]/80 border border-blue-100/70 flex items-center justify-between mb-4 shadow-2xs">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="h-8 w-8 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center border border-teal-100 shrink-0">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-900 leading-tight truncate">
-                    Review Portal
-                  </p>
-                  <p className="text-[10px] text-slate-500 font-medium truncate">
-                    Executive Queue
-                  </p>
-                </div>
-              </div>
-              <span className="px-2 py-0.5 rounded-full bg-[#99efe5] text-[#006f67] text-[11px] font-extrabold tracking-tight shrink-0">
-                14 New
-              </span>
-            </div>
-          ) : (
-            /* Primary Action Button: + New Registration */
-            <div className="mb-5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (onNewRegistration) {
-                    onNewRegistration();
-                  } else if (onManageRegistrars) {
-                    onManageRegistrars();
-                  } else {
-                    router.push('/registrations/new');
-                  }
-                  if (onCloseMobile) onCloseMobile();
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white text-xs font-bold shadow-xs transition-all cursor-pointer hover:shadow-sm shrink-0"
-              >
-                <Plus className="h-4 w-4 stroke-[2.5]" />
-                <span>New Registration</span>
-              </button>
-            </div>
-          )}
+          {/* Global Action Button (Registrar Style) */}
+          <div className="mb-5">
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white text-xs font-bold shadow-xs transition-all cursor-pointer hover:shadow-sm shrink-0"
+            >
+              <Plus className="h-4 w-4 stroke-[2.5]" />
+              <span>New Registration</span>
+            </button>
+          </div>
 
           {/* Section Heading */}
           <div className="px-2.5 mb-2">
@@ -289,7 +262,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </p>
           </div>
 
-          {/* Navigation Links */}
+          {/* Navigation Links (Uniform Registrar Style: #99efe5 / #006f67) */}
           <nav className="space-y-1.5 flex-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -305,22 +278,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }
                     if (onCloseMobile) onCloseMobile();
                   }}
-                  className={`flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-semibold transition-colors ${
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors ${
                     active
-                      ? currentRole === 'ADMINISTRATOR' || currentRole === 'UNIVERSAL'
-                        ? 'bg-[#191c1e] text-white font-bold shadow-xs'
-                        : 'bg-[#99efe5] text-[#006f67] font-bold'
-                      : 'text-[#45464d] hover:bg-slate-100/70 hover:text-slate-900'
+                      ? 'bg-[#99efe5] text-[#006f67] font-bold'
+                      : 'text-[#45464d] font-semibold hover:bg-slate-100/70 hover:text-slate-900'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Icon
                       className={`h-4.5 w-4.5 shrink-0 ${
-                        active
-                          ? currentRole === 'ADMINISTRATOR' || currentRole === 'UNIVERSAL'
-                            ? 'text-white'
-                            : 'text-[#006f67]'
-                          : 'text-slate-500'
+                        active ? 'text-[#006f67]' : 'text-slate-500'
                       }`}
                     />
                     <span className="truncate">{item.name}</span>
@@ -337,108 +304,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
-        {/* Bottom Group: Administrative Session Card / Active Affiliate Card */}
-        <div className="p-4 shrink-0">
-          {currentRole === 'UNIVERSAL' ? (
-            <div className="p-4 rounded-2xl bg-[#eff4ff] flex flex-col gap-2.5">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <p className="text-[10px] font-bold text-[#006f67] uppercase tracking-wider leading-none">
-                  ROOT SESSION
-                </p>
-              </div>
-              <p className="text-xs font-bold text-slate-900 leading-snug">
-                Global Council Node: SG-ASIA-01
+        {/* Bottom Group: Global Session/Institution Card + Help/SignOut Action Row */}
+        <div className="p-4 shrink-0 space-y-3">
+          {/* Assigned Context Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="flex items-center gap-2.5 mb-2">
+              <ContextIcon className="h-4 w-4 text-[#3c8c8a]" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {roleContextConfig.label}
               </p>
-              <p className="text-[11px] text-slate-500 font-mono">
-                Cryptographic Ledger Master
-              </p>
-              <div className="flex items-center justify-between pt-2 border-t border-blue-100/60">
-                <button
-                  type="button"
-                  onClick={() => setShowHelpModal(true)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors"
-                >
-                  <CircleHelp className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Help & Guidelines</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex items-center gap-1.5 text-xs font-bold bg-red-700 text-slate-700 hover:text-red-700 transition-colors"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
             </div>
-          ) : currentRole === 'ADMINISTRATOR' ? (
-            <div className="p-4 rounded-2xl bg-[#eff4ff] flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider leading-none">
-                  Administrative Session
-                </p>
-              </div>
-              <p className="text-xs font-bold text-slate-900 leading-snug">
-                ATA Central Council Secretariat — Asia Regional HQ
-              </p>
-              <div className="flex items-center justify-between pt-2 border-t border-blue-100/60">
-                <button
-                  type="button"
-                  onClick={() => setShowHelpModal(true)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors"
-                >
-                  <CircleHelp className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Help & Guidelines</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-red-700 transition-colors"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Assigned Institution Box */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center gap-2.5 mb-2">
-                  <Building2 className="h-4 w-4 text-[#3c8c8a]" />
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Assigned Institution
-                  </p>
-                </div>
-                <p className="text-sm font-bold text-slate-900 leading-snug">
-                  South Asia Institute of Advanced Christian Studies
-                </p>
-              </div>
+            <p className="text-sm font-bold text-slate-900 leading-snug">
+              {roleContextConfig.title}
+            </p>
+          </div>
 
-              {/* Action Buttons Row */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowHelpModal(true)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold transition-all"
-                >
-                  <CircleHelp className="h-4 w-4 text-slate-500" />
-                  <span>Help</span>
-                </button>
+          {/* Action Buttons Row (Registrar Style: 2 Equal Width Buttons) */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowHelpModal(true)}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+            >
+              <CircleHelp className="h-4 w-4 text-slate-500" />
+              <span>Help</span>
+            </button>
 
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-all"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-all cursor-pointer"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -456,8 +356,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowHelpModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -483,7 +384,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setShowHelpModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors"
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Close
               </button>

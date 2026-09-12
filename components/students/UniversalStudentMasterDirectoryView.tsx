@@ -396,67 +396,51 @@ export const UniversalStudentMasterDirectoryView: React.FC<UniversalStudentMaste
       {/* 3. Top 4 Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: TOTAL SCHOLARS REGISTERED */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-slate-400">
-                TOTAL SCHOLARS REGISTERED
-              </span>
-              <div className="h-8 w-8 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center">
-                <Users className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">4,890</div>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                <span>↗ +8.4% YoY</span>
-              </span>
-              <span className="text-xs text-slate-500">Across 142 seminaries</span>
+        <div className="bg-white rounded-2xl p-4.5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              TOTAL SCHOLARS
+            </span>
+            <div className="h-9 w-9 rounded-xl bg-teal-50 text-[#006f67] flex items-center justify-center shrink-0">
+              <Users className="h-4.5 w-4.5" />
             </div>
           </div>
-          <div className="h-1 w-12 bg-[#006f67] rounded-full mt-4" />
+          <div className="mt-2">
+            <h3 className="text-3xl font-extrabold text-[#0f172a] tracking-tight">31</h3>
+            <p className="text-xs text-[#94a3b8] mt-1 font-medium">Across all institutions</p>
+          </div>
         </div>
 
         {/* Card 2: ACTIVE ENROLLED */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-slate-400">
-                ACTIVE ENROLLED
-              </span>
-              <div className="h-8 w-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <GraduationCap className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">1,428</div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-              <span>Across 42 regional hubs</span>
-              <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden flex">
-                <div className="h-full bg-[#006f67] rounded-full w-[70%]" />
-              </div>
+        <div className="bg-white rounded-2xl p-4.5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              ACTIVE ENROLMENT
+            </span>
+            <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <GraduationCap className="h-4.5 w-4.5" />
             </div>
           </div>
-          <div className="h-1 w-12 bg-blue-600 rounded-full mt-4" />
+          <div className="mt-2">
+            <h3 className="text-3xl font-extrabold text-[#0f172a] tracking-tight">25</h3>
+            <p className="text-xs text-[#94a3b8] mt-1 font-medium">Current records</p>
+          </div>
         </div>
 
         {/* Card 3: CONFERRED ALUMNI */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-slate-400">
-                CONFERRED ALUMNI
-              </span>
-              <div className="h-8 w-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                <Award className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900 tracking-tight">3,120</div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-600">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="font-medium">64% ordained / active ministry</span>
+        <div className="bg-white rounded-2xl p-4.5 border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              CONFERRED ALUMNI
+            </span>
+            <div className="h-9 w-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <Award className="h-4.5 w-4.5" />
             </div>
           </div>
-          <div className="h-1 w-12 bg-purple-600 rounded-full mt-4" />
+          <div className="mt-2">
+            <h3 className="text-3xl font-extrabold text-[#0f172a] tracking-tight">3</h3>
+            <p className="text-xs text-[#94a3b8] mt-1 font-medium">Degree issued</p>
+          </div>
         </div>
 
         {/* Card 4: MULTI-DEGREE SCHOLARS (Dark Card) */}
