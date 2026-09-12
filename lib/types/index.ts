@@ -275,6 +275,20 @@ export interface AppNotification {
   notice_id?: string;
   metadata?: Record<string, any>;
 }
-
-
-
+export interface ChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: UserRole;
+  recipient_role?: UserRole | 'ALL';
+  recipient_id?: string;
+  student_id?: string;
+  message: string;
+  created_at: string;
+}export interface ChatUser {
+  id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  institution_name?: string;
+}

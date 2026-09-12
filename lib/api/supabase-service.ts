@@ -14,6 +14,8 @@ import {
   RegistrationType,
   DashboardMetrics,
   AuditLog,
+  ChatMessage,
+  ChatUser,
 } from '../types';
 import {
   extractYear,
@@ -2371,4 +2373,177 @@ export async function exportRegistrationsToExcel(registrations: Registration[]):
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'System Registrations Report');
   XLSX.writeFile(wb, `ATA_System_Registrations_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+export const inMemoryChatUsers: ChatUser[] = [
+  {
+    id: 'user-admin-1',
+    full_name: 'Dr. Grace Chen (Admin)',
+    email: 'admin@ata.gov.in',
+    role: 'ADMINISTRATOR',
+    institution_name: 'ATA Central Council',
+  },
+  {
+    id: 'user-admin-2',
+    full_name: 'Admin Office - Verification Officer',
+    email: 'verification@ata.gov.in',
+    role: 'ADMINISTRATOR',
+    institution_name: 'ATA Central Council',
+  },
+  {
+    id: 'user-reg-1',
+    full_name: 'Inst. Registrar (IIT Bombay)',
+    email: 'registrar.iitb@ata.gov.in',
+    role: 'REGISTRAR',
+    institution_name: 'Indian Institute of Technology Bombay',
+  },
+  {
+    id: 'user-reg-2',
+    full_name: 'Inst. Registrar (IISc Bangalore)',
+    email: 'registrar.iisc@ata.gov.in',
+    role: 'REGISTRAR',
+    institution_name: 'Indian Institute of Science Bangalore',
+  },
+  {
+    id: 'user-univ-1',
+    full_name: 'Universal Director Oversight',
+    email: 'director@ata.gov.in',
+    role: 'UNIVERSAL',
+    institution_name: 'Ministry of Education / ATA Oversight',
+  },
+];
+
+export async function fetchChatUsers(currentRole: UserRole): Promise<ChatUser[]> {
+  try {
+    const { data: dbProfiles, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, institution_id');
+
+    if (!error && dbProfiles && dbProfiles.length > 0) {
+      const institutionIds = Array.from(new Set(dbProfiles.map((p: any) => p.institution_id).filter(Boolean)));
+      let instMap = new Map<string, string>();
+      if (institutionIds.length > 0) {
+        const { data: insts } = await supabase
+          .from('institutions')
+          .select('id, name')
+          .in('id', institutionIds);
+        (insts || []).forEach((i: any) => instMap.set(i.id, i.name));
+      }
+
+      const users: ChatUser[] = dbProfiles.map((p: any) => ({
+        id: p.id,
+        full_name: p.full_name || p.email || 'System User',
+        email: p.email || '',
+        role: p.role as UserRole,
+        institution_name: p.institution_id ? instMap.get(p.institution_id) || 'Member Institution' : 'ATA Central Council',
+      }));
+
+      const filtered = users.filter((u) => {
+        if (currentRole === 'REGISTRAR') return u.role === 'ADMINISTRATOR';
+        if (currentRole === 'ADMINISTRATOR') return u.role === 'REGISTRAR' || u.role === 'UNIVERSAL';
+        if (currentRole === 'UNIVERSAL') return u.role === 'REGISTRAR' || u.role === 'ADMINISTRATOR';
+        return false;
+      });
+
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+  } catch (err) {
+    console.error('[fetchChatUsers] Error fetching live Supabase profiles:', err);
+  }
+
+  return inMemoryChatUsers.filter((u) => {
+    if (currentRole === 'REGISTRAR') return u.role === 'ADMINISTRATOR';
+    if (currentRole === 'ADMINISTRATOR') return u.role === 'REGISTRAR' || u.role === 'UNIVERSAL';
+    if (currentRole === 'UNIVERSAL') return u.role === 'REGISTRAR' || u.role === 'ADMINISTRATOR';
+    return false;
+  });
+}
+
+let inMemoryChatMessages: ChatMessage[] = [
+  {
+    id: 'chat-1',
+    sender_id: 'user-reg-1',
+    sender_name: 'Inst. Registrar (IIT Bombay)',
+    sender_role: 'REGISTRAR',
+    recipient_role: 'ADMINISTRATOR',
+    recipient_id: 'user-admin-1',
+    message: 'Submitted registration dossiers for batch verification. Please review.',
+    created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+  },
+  {
+    id: 'chat-2',
+    sender_id: 'user-admin-1',
+    sender_name: 'Dr. Grace Chen (Admin)',
+    sender_role: 'ADMINISTRATOR',
+    recipient_role: 'REGISTRAR',
+    recipient_id: 'user-reg-1',
+    message: 'Received batch. Initial verification in progress.',
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+  },
+];
+
+export async function fetchChatMessages(params?: {
+  student_id?: string;
+  sender_role?: UserRole;
+  recipient_role?: UserRole | 'ALL';
+  current_user_id?: string;
+  target_user_id?: string;
+}): Promise<ChatMessage[]> {
+  let list = [...inMemoryChatMessages];
+  
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('ATA_CHAT_MESSAGES');
+      if (stored) {
+        list = JSON.parse(stored);
+        inMemoryChatMessages = list;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (params?.student_id) {
+    return list.filter((m) => m.student_id === params.student_id);
+  }
+
+  let filtered = list.filter((m) => !m.student_id);
+
+  if (params?.target_user_id) {
+    filtered = filtered.filter(
+      (m) =>
+        (m.sender_id === params.target_user_id || m.recipient_id === params.target_user_id) ||
+        (!m.recipient_id && (m.recipient_role === 'ALL' || m.recipient_role === params.recipient_role))
+    );
+  }
+
+  return filtered;
+}
+
+export async function addChatMessage(msg: Omit<ChatMessage, 'id' | 'created_at'>): Promise<ChatMessage> {
+  const newMsg: ChatMessage = {
+    ...msg,
+    id: `chat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    created_at: new Date().toISOString(),
+  };
+
+  inMemoryChatMessages.push(newMsg);
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ATA_CHAT_MESSAGES', JSON.stringify(inMemoryChatMessages));
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    await supabase.from('chat_messages').insert([newMsg]);
+  } catch {
+    // ignore if table not created in DB yet
+  }
+
+  return newMsg;
 }

@@ -11,6 +11,7 @@ import { MasterStudentDirectoryView } from '@/components/admin/MasterStudentDire
 import { UniversalStudentMasterDirectoryView } from '@/components/students/UniversalStudentMasterDirectoryView';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { GlobalStudentsChatDrawer } from '@/components/chat/GlobalStudentsChatDrawer';
 
 function StudentsPageContent() {
   const router = useRouter();
@@ -115,6 +116,11 @@ function StudentsPageContent() {
           }}
         />
       )}
+      <GlobalStudentsChatDrawer
+        currentRole={role}
+        currentUserId={user?.id}
+        currentUserName={user?.full_name || user?.email}
+      />
     </PortalLayout>
   );
 }

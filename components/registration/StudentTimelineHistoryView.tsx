@@ -26,6 +26,7 @@ import {
   IdCard,
   Plus,
 } from 'lucide-react';
+import { StudentContextualChatPanel } from '@/components/chat/StudentContextualChatPanel';
 
 interface StudentTimelineHistoryViewProps {
   initialStudentIdOrUid?: string;
@@ -818,6 +819,17 @@ export const StudentTimelineHistoryView: React.FC<StudentTimelineHistoryViewProp
                 </button>
               </div>
             </div>
+          )}
+
+          {/* Contextual Student Comments & Chat Panel */}
+          {selectedStudent && (
+            <StudentContextualChatPanel
+              studentId={selectedStudent.id}
+              studentName={`${selectedStudent.first_name} ${selectedStudent.last_name}`}
+              currentRole={currentRole || 'ADMINISTRATOR'}
+              currentUserId={user?.id}
+              currentUserName={user?.full_name || user?.email}
+            />
           )}
         </div>
       </div>
