@@ -3,57 +3,62 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/context/AuthContext';
-import { UserRole } from '@/lib/types';
 import { Landmark, Shield, Building, UserCheck, Lock, User, Mail, AlertCircle, KeyRound } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
 
-  const [selectedRole, setSelectedRole] = useState<UserRole>('REGISTRAR');
+  const [selectedRole, setSelectedRole] = useState<'REGISTRAR' | 'ADMINISTRATOR' | 'UNIVERSAL'>('REGISTRAR');
   const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password) return;
 
     setIsSubmitting(true);
     setErrorMessage('');
     try {
-      // Real-time login and user profile sync
-      const profile = await login(
-        email.trim(),
-        fullName.trim() || email.split('@')[0].replace('.', ' '),
-        selectedRole
+      await login(email.trim(), password);
+      router.push('/dashboard');
+    } catch (err: unknown) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Authentication failed. Please verify credentials.'
       );
-      if (profile) {
-        router.push('/dashboard');
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Authentication failed. Please verify credentials.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const placeholderEmail =
+    selectedRole === 'ADMINISTRATOR'
+      ? 'john@ataindia.org'
+      : selectedRole === 'UNIVERSAL'
+      ? 'justin@ataindia.org'
+      : 'thomas@ataindia.org';
+
+  const roles = [
+    { id: 'REGISTRAR',     label: 'Registrar',  icon: UserCheck },
+    { id: 'ADMINISTRATOR', label: 'Admin',       icon: Building  },
+    { id: 'UNIVERSAL',     label: 'Universal',   icon: Shield    },
+  ] as const;
+
   return (
     <div className="min-h-screen w-screen bg-[#f8fafc] flex flex-col justify-center items-center p-4 sm:p-6 text-slate-900 font-sans antialiased">
-      {/* Login Container Box */}
       <div className="w-full max-w-md bg-white border border-slate-200/90 rounded-2xl shadow-xl overflow-hidden">
+
         {/* Brand Header */}
         <div className="p-8 border-b border-slate-100 text-center bg-slate-50/50">
           <div className="mx-auto w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md mb-3">
             <Landmark className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            ATA Portal
-          </h1>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">ATA Portal</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Student Registration & Institution Management
+            Student Registration &amp; Institution Management
           </p>
         </div>
 
@@ -67,24 +72,19 @@ export default function LoginPage() {
 
         {/* Form Body */}
         <div className="p-8 space-y-6">
-          {/* Role Selection Tabs */}
+          {/* Role Selector */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
               Select User Role
             </label>
             <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100/80 rounded-xl border border-slate-200/70">
-              {[
-                { role: 'REGISTRAR', label: 'Registrar', icon: UserCheck },
-                { role: 'ADMINISTRATOR', label: 'Admin', icon: Building },
-                { role: 'UNIVERSAL', label: 'Universal', icon: Shield },
-              ].map((r) => {
-                const Icon = r.icon;
-                const isSelected = selectedRole === r.role;
+              {roles.map(({ id, label, icon: Icon }) => {
+                const isSelected = selectedRole === id;
                 return (
                   <button
-                    key={r.role}
+                    key={id}
                     type="button"
-                    onClick={() => setSelectedRole(r.role as UserRole)}
+                    onClick={() => setSelectedRole(id)}
                     className={`flex flex-col items-center py-2 px-1 rounded-lg text-xs font-semibold transition-all ${
                       isSelected
                         ? 'bg-blue-600 text-white shadow-xs'
@@ -92,14 +92,14 @@ export default function LoginPage() {
                     }`}
                   >
                     <Icon className="h-4 w-4 mb-1" />
-                    <span>{r.label}</span>
+                    <span>{label}</span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Real-time Authentication Form */}
+          {/* Form */}
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -110,16 +110,11 @@ export default function LoginPage() {
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={
-                    selectedRole === 'ADMINISTRATOR'
-                      ? 'admin@ataportal.edu'
-                      : selectedRole === 'UNIVERSAL'
-                      ? 'universal@ataportal.edu'
-                      : 'registrar@ataportal.edu'
-                  }
-                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  placeholder={placeholderEmail}
+                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -132,17 +127,20 @@ export default function LoginPage() {
                 <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   type="password"
+                  required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password (e.g. admin123)"
-                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  placeholder="Enter password"
+                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden placeholder:text-slate-400"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Full Name <span className="text-slate-400 font-normal">(Optional for existing accounts)</span>
+                Full Name{' '}
+                <span className="text-slate-400 font-normal">(Optional for existing accounts)</span>
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -151,7 +149,7 @@ export default function LoginPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter full name"
-                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -167,7 +165,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        {/* Footer info */}
+        {/* Footer */}
         <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-center text-[11px] text-slate-400 font-medium">
           Authorized Academic Institution Management Access
         </div>

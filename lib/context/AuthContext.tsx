@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { Profile, UserRole, ActorContext } from '@/lib/types';
-import { upsertProfile } from '@/lib/api/supabase-service';
 
 // localStorage is only used to persist the email hint for the login form,
 // NEVER for identity, role, institutionId, or authorization decisions.
@@ -12,7 +11,7 @@ interface AuthContextType {
   user: Profile | null;
   actorContext: ActorContext | undefined;
   loading: boolean;
-  login: (email: string, fullName: string, role: UserRole, institutionId?: string) => Promise<Profile>;
+  login: (email: string, password: string) => Promise<Profile>;
   logout: () => void;
   createRegistrar: (email: string, fullName: string, institutionId?: string) => Promise<Profile>;
 }
@@ -24,7 +23,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   // actorContext is always derived from the server-verified user object.
-  // It is NEVER built from localStorage, URL params, or client-supplied values.
   const actorContext = useMemo<ActorContext | undefined>(() => {
     if (!user) return undefined;
     return {
@@ -36,9 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   useEffect(() => {
-    // On mount: resolve identity from the server-side HTTP-only session cookie.
-    // We do NOT read localStorage for identity — that is the security boundary.
-    // loading stays true until the server responds.
+    // Resolve identity from the HTTP-only session cookie — never from localStorage.
     const resolveServerSession = async () => {
       try {
         const res = await fetch('/api/auth/session', {
@@ -52,7 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(null);
         }
       } catch {
-        // Network error — treat as unauthenticated
         setUser(null);
       } finally {
         setLoading(false);
@@ -62,39 +57,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     resolveServerSession();
   }, []);
 
-  const login = async (email: string, fullName: string, role: UserRole, institutionId?: string): Promise<Profile> => {
+  const login = async (email: string, password: string): Promise<Profile> => {
     setLoading(true);
     try {
-      // 1. Upsert profile in Supabase (creates or updates the profile row)
-      const profile = await upsertProfile(email, fullName, role, institutionId);
-
-      // 2. Establish the authoritative HTTP-only server session cookie
-      await fetch('/api/auth/session', {
+      // Single server round-trip: validate credentials and set the session cookie.
+      const res = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile.id, email: profile.email }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
         credentials: 'include',
       });
 
-      // 3. Re-fetch the authoritative server session (which includes institution_id from live DB)
-      const sessionRes = await fetch('/api/auth/session', {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (sessionRes.ok) {
-        const data = await sessionRes.json();
-        const serverProfile = data.user ?? profile;
-        setUser(serverProfile);
+      const data = await res.json();
 
-        // Store only the email hint for the login form (non-auth use)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(LOGIN_EMAIL_HINT_KEY, email);
-        }
-
-        return serverProfile;
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid email or password.');
       }
 
+      const profile: Profile = data.user;
       setUser(profile);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOGIN_EMAIL_HINT_KEY, email);
+      }
+
       return profile;
     } finally {
       setLoading(false);
@@ -103,7 +89,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setUser(null);
-    // Clear only the login email hint
     if (typeof window !== 'undefined') {
       localStorage.removeItem(LOGIN_EMAIL_HINT_KEY);
     }
@@ -111,7 +96,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const createRegistrar = async (email: string, fullName: string, institutionId?: string): Promise<Profile> => {
-    // Delegate to the BFF — the server verifies the caller is an ADMINISTRATOR
     const res = await fetch('/api/admin/registrars', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -119,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       credentials: 'include',
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to create registrar');
     }
     return res.json();

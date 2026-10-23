@@ -38,15 +38,26 @@ export default function DashboardPage() {
 
   const loadData = useCallback(async () => {
     // Guard: never fetch protected data before auth resolves
-    if (authLoading || !user) return;
+    if (authLoading || !user) {
+      // Don't leave loading=true when we can't fetch yet
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       // All data fetching goes through the BFF — actorContext is built server-side
       const res = await fetch('/api/dashboard', { credentials: 'include' });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to fetch dashboard data');
+        const err = await res.json().catch(() => ({}));
+        const errMsg: string = err.error || 'Failed to fetch dashboard data';
+        // If the server says our session is invalid (401), redirect to login.
+        // This handles the race where the cookie isn't propagated yet on first load.
+        if (res.status === 401) {
+          router.push('/login');
+          return;
+        }
+        throw new Error(errMsg);
       }
       const data = await res.json();
       setMetrics(data.metrics);
@@ -56,17 +67,16 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        // Not authenticated — redirect to login
-        router.push('/login');
-        return;
-      }
-      loadData();
+    if (authLoading) return; // still resolving session — wait
+    if (!user) {
+      // Not authenticated — redirect to login
+      router.push('/login');
+      return;
     }
+    loadData();
   }, [authLoading, user, loadData, router]);
 
   // Handle select registration to view detail
